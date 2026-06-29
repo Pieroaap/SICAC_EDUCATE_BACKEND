@@ -4,11 +4,70 @@ import { authorize } from '../../../infrastructure/http/authorize.js';
 import {
   assignStudentGuardian,
   createPersonWithoutAccess,
+  getPersonDetail,
   importTeachers,
+  listPeople,
   listTeachers,
+  updatePerson,
 } from './service.js';
 
 export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> {
+  const managers = ['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO'];
+  const personBody = z.object({
+    tipoDocumento: z.enum(['dni', 'pasaporte', 'carnet_extranjeria', 'otro']),
+    numeroDocumento: z.string().trim().min(1).max(30),
+    nombres: z.string().trim().min(1).max(150),
+    apellidoPaterno: z.string().trim().min(1).max(100),
+    apellidoMaterno: z.string().trim().max(100).nullable().optional(),
+    correo: z.string().email().nullable().optional(),
+    telefono: z.string().trim().max(30).nullable().optional(),
+    fechaNacimiento: z.string().date().nullable().optional(),
+    estado: z.enum(['activo', 'inactivo']).optional(),
+  });
+
+  app.get('/personas', {
+    preHandler: [app.authenticate, authorize(...managers)],
+    schema: {
+      tags: ['Usuarios'],
+      summary: 'Listar personas con roles y estado de acceso',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', maxLength: 100 },
+          estado: { type: 'string', enum: ['activo', 'inactivo'] },
+          page: { type: 'integer', minimum: 1, default: 1 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+        },
+      },
+    },
+  }, async (request) => {
+    const query = z.object({
+      search: z.string().trim().max(100).optional(),
+      estado: z.enum(['activo', 'inactivo']).optional(),
+      page: z.coerce.number().int().min(1).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    }).parse(request.query);
+    return listPeople(app.db, query);
+  });
+
+  app.get('/personas/:id', {
+    preHandler: [app.authenticate, authorize(...managers)],
+    schema: {
+      tags: ['Usuarios'],
+      summary: 'Obtener el detalle de una persona',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string', format: 'uuid' } },
+      },
+    },
+  }, async (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    return getPersonDetail(app.db, id);
+  });
+
   app.post('/personas', {
     preHandler: [
       app.authenticate,
@@ -38,21 +97,47 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
       },
     },
   }, async (request, reply) => {
-    const body = z.object({
-      tipoDocumento: z.enum(['dni', 'pasaporte', 'carnet_extranjeria', 'otro']),
-      numeroDocumento: z.string().trim().min(1).max(30),
-      nombres: z.string().trim().min(1).max(150),
-      apellidoPaterno: z.string().trim().min(1).max(100),
-      apellidoMaterno: z.string().trim().max(100).optional(),
-      correo: z.string().email().optional(),
-      telefono: z.string().trim().max(30).optional(),
-      fechaNacimiento: z.string().date().optional(),
-    }).parse(request.body);
+    const body = personBody.omit({ estado: true }).parse(request.body);
     const created = await createPersonWithoutAccess(app.db, {
       ...body,
       createdBy: request.auth!.personaId,
     });
     return reply.status(201).send(created);
+  });
+
+  app.patch('/personas/:id', {
+    preHandler: [app.authenticate, authorize(...managers)],
+    schema: {
+      tags: ['Usuarios'],
+      summary: 'Actualizar una persona',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string', format: 'uuid' } },
+      },
+      body: {
+        type: 'object',
+        minProperties: 1,
+        properties: {
+          tipoDocumento: { type: 'string', enum: ['dni', 'pasaporte', 'carnet_extranjeria', 'otro'] },
+          numeroDocumento: { type: 'string', maxLength: 30 },
+          nombres: { type: 'string', maxLength: 150 },
+          apellidoPaterno: { type: 'string', maxLength: 100 },
+          apellidoMaterno: { type: ['string', 'null'], maxLength: 100 },
+          correo: { type: ['string', 'null'], format: 'email' },
+          telefono: { type: ['string', 'null'], maxLength: 30 },
+          fechaNacimiento: { type: ['string', 'null'], format: 'date' },
+          estado: { type: 'string', enum: ['activo', 'inactivo'] },
+        },
+      },
+    },
+  }, async (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = personBody.partial()
+      .refine((value) => Object.keys(value).length > 0, 'Debe indicar al menos un campo')
+      .parse(request.body);
+    return updatePerson(app.db, id, body, request.auth!.personaId);
   });
 
   app.get('/profesores', {

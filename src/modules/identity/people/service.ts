@@ -1,4 +1,17 @@
-import { and, count, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  SQL,
+  sql,
+} from 'drizzle-orm';
 import type { Database } from '../../../infrastructure/database/client.js';
 import {
   alumnoTutores,
@@ -48,6 +61,158 @@ export async function createPersonWithoutAccess(
   if (existing) throw conflict('Ya existe una persona con ese documento');
   const [created] = await db.insert(personas).values(input).returning();
   return created;
+}
+
+export async function listPeople(
+  db: Database,
+  filters: {
+    search?: string | undefined;
+    estado?: 'activo' | 'inactivo' | undefined;
+    page: number;
+    pageSize: number;
+  },
+) {
+  const conditions: SQL[] = [];
+  if (filters.estado) conditions.push(eq(personas.estado, filters.estado));
+  if (filters.search) {
+    const term = `%${filters.search}%`;
+    conditions.push(or(
+      ilike(personas.numeroDocumento, term),
+      ilike(personas.nombres, term),
+      ilike(personas.apellidoPaterno, term),
+      ilike(personas.apellidoMaterno, term),
+      ilike(personas.correo, term),
+    )!);
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const offset = (filters.page - 1) * filters.pageSize;
+
+  const [[totalRow], people] = await Promise.all([
+    db.select({ total: count() }).from(personas).where(where),
+    db.select({
+      id: personas.id,
+      tipoDocumento: personas.tipoDocumento,
+      numeroDocumento: personas.numeroDocumento,
+      nombres: personas.nombres,
+      apellidoPaterno: personas.apellidoPaterno,
+      apellidoMaterno: personas.apellidoMaterno,
+      correo: personas.correo,
+      telefono: personas.telefono,
+      estado: personas.estado,
+      tieneAcceso: usuariosAuth.id,
+    }).from(personas)
+      .leftJoin(usuariosAuth, eq(usuariosAuth.personaId, personas.id))
+      .where(where)
+      .orderBy(asc(personas.apellidoPaterno), asc(personas.apellidoMaterno), asc(personas.nombres))
+      .limit(filters.pageSize)
+      .offset(offset),
+  ]);
+  const personIds = people.map((person) => person.id);
+  const assignments = personIds.length === 0 ? [] : await db.select({
+    personaId: personasRoles.personaId,
+    codigo: roles.codigo,
+    nombre: roles.nombre,
+    estado: personasRoles.estado,
+  }).from(personasRoles)
+    .innerJoin(roles, eq(roles.id, personasRoles.rolId))
+    .where(inArray(personasRoles.personaId, personIds))
+    .orderBy(asc(roles.nombre));
+
+  const data = people.map((person) => ({
+    ...person,
+    tieneAcceso: Boolean(person.tieneAcceso),
+    roles: assignments
+      .filter((assignment) => assignment.personaId === person.id)
+      .map(({ codigo, nombre, estado }) => ({ codigo, nombre, estado })),
+  }));
+  const total = totalRow?.total ?? 0;
+
+  return {
+    data,
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total,
+      totalPages: Math.ceil(total / filters.pageSize),
+    },
+  };
+}
+
+export async function getPersonDetail(db: Database, personId: string) {
+  const [person] = await db.select({
+    id: personas.id,
+    tipoDocumento: personas.tipoDocumento,
+    numeroDocumento: personas.numeroDocumento,
+    nombres: personas.nombres,
+    apellidoPaterno: personas.apellidoPaterno,
+    apellidoMaterno: personas.apellidoMaterno,
+    correo: personas.correo,
+    telefono: personas.telefono,
+    fechaNacimiento: personas.fechaNacimiento,
+    estado: personas.estado,
+    tieneAcceso: usuariosAuth.id,
+  }).from(personas)
+    .leftJoin(usuariosAuth, eq(usuariosAuth.personaId, personas.id))
+    .where(eq(personas.id, personId))
+    .limit(1);
+  if (!person) throw notFound('Persona no encontrada');
+
+  const [assignments, guardians] = await Promise.all([
+    db.select({
+      codigo: roles.codigo,
+      nombre: roles.nombre,
+      estado: personasRoles.estado,
+      fechaInicio: personasRoles.fechaInicio,
+      fechaFin: personasRoles.fechaFin,
+    }).from(personasRoles)
+      .innerJoin(roles, eq(roles.id, personasRoles.rolId))
+      .where(eq(personasRoles.personaId, personId))
+      .orderBy(desc(personasRoles.fechaInicio)),
+    db.select({
+      id: alumnoTutores.id,
+      tutorPersonaId: alumnoTutores.tutorPersonaId,
+      tipoRelacion: alumnoTutores.tipoRelacion,
+      estado: alumnoTutores.estado,
+      fechaInicio: alumnoTutores.fechaInicio,
+      fechaFin: alumnoTutores.fechaFin,
+    }).from(alumnoTutores)
+      .where(eq(alumnoTutores.alumnoPersonaId, personId))
+      .orderBy(desc(alumnoTutores.fechaInicio)),
+  ]);
+
+  return {
+    ...person,
+    tieneAcceso: Boolean(person.tieneAcceso),
+    roles: assignments,
+    tutores: guardians,
+  };
+}
+
+type UpdatePersonInput = {
+  tipoDocumento?: typeof personas.$inferInsert.tipoDocumento | undefined;
+  numeroDocumento?: string | undefined;
+  nombres?: string | undefined;
+  apellidoPaterno?: string | undefined;
+  apellidoMaterno?: string | null | undefined;
+  correo?: string | null | undefined;
+  telefono?: string | null | undefined;
+  fechaNacimiento?: string | null | undefined;
+  estado?: typeof personas.$inferInsert.estado | undefined;
+};
+
+export async function updatePerson(
+  db: Database,
+  personId: string,
+  data: UpdatePersonInput,
+  actorId: string,
+) {
+  const [updated] = await db.update(personas).set({
+    ...data,
+    updatedAt: new Date(),
+    updatedBy: actorId,
+  }).where(eq(personas.id, personId)).returning();
+  if (!updated) throw notFound('Persona no encontrada');
+  return updated;
 }
 
 export type TeacherImportRow = {
