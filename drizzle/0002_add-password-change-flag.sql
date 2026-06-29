@@ -1,0 +1,1 @@
+ALTER TABLE "usuarios_auth" ADD COLUMN "debe_cambiar_clave" boolean DEFAULT true NOT NULL;

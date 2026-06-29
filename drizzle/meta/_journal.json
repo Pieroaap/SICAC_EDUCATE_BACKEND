@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1782628731326,
+      "tag": "0000_abandoned_spitfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782629508698,
+      "tag": "0001_remove-v2-table-suffix",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782629902029,
+      "tag": "0002_add-password-change-flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782681950518,
+      "tag": "0003_add-student-profiles-and-categorical-benefits",
+      "breakpoints": true
+    }
+  ]
+}

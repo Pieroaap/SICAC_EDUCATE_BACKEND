@@ -1,0 +1,42 @@
+{
+  "name": "sicac-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file=.env dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs generate",
+    "db:migrate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs migrate",
+    "db:seed": "tsx --env-file=.env src/db/seed.ts",
+    "db:verify": "tsx --env-file=.env scripts/verify-database.ts",
+    "admin:bootstrap": "tsx --env-file=.env scripts/bootstrap-admin.ts",
+    "admin:reset-password": "tsx --env-file=.env scripts/reset-admin-password.ts",
+    "admin:verify": "tsx --env-file=.env scripts/verify-admin-login.ts",
+    "docs:validate": "tsx --env-file=.env scripts/validate-openapi.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/swagger": "^9.5.0",
+    "@fastify/swagger-ui": "^5.2.0",
+    "@supabase/supabase-js": "^2.50.0",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.4.0",
+    "fastify-plugin": "^5.0.1",
+    "postgres": "^3.4.7",
+    "xlsx": "^0.18.5",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "drizzle-kit": "^0.31.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}
