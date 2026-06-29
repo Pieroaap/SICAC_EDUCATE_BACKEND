@@ -300,14 +300,38 @@ export async function listStudents(
   };
 }
 
+type UpdateStudentProfileInput = {
+  estado?: StudentState | undefined;
+  beneficio?: Benefit | undefined;
+  tipoBeneficio?: BenefitType | undefined;
+  anioIngreso?: number | undefined;
+  periodoIngreso?: string | undefined;
+};
+
 export async function updateStudentProfile(
   db: Database,
   personaId: string,
-  data: Partial<Pick<typeof perfilesAlumno.$inferInsert, 'estado' | 'beneficio' | 'tipoBeneficio'>>,
+  data: UpdateStudentProfileInput,
   actorId: string,
 ) {
+  const [current] = await db.select({
+    anioIngreso: perfilesAlumno.anioIngreso,
+    periodoIngreso: perfilesAlumno.periodoIngreso,
+  }).from(perfilesAlumno).where(eq(perfilesAlumno.personaId, personaId)).limit(1);
+  if (!current) throw notFound('Perfil de alumno no encontrado');
+  const normalizedPeriod = data.periodoIngreso
+    ? data.periodoIngreso.trim().toUpperCase().replace(/\s*-\s*/, '-')
+    : undefined;
+  const nextYear = data.anioIngreso ?? current.anioIngreso;
+  const nextPeriod = normalizedPeriod ?? current.periodoIngreso;
+  if (Number(nextPeriod.slice(0, 4)) !== nextYear) {
+    throw badRequest('El aÃ±o de ingreso debe coincidir con el periodo de ingreso');
+  }
   const [updated] = await db.update(perfilesAlumno).set({
-    ...data, updatedAt: new Date(), updatedBy: actorId,
+    ...data,
+    periodoIngreso: normalizedPeriod ?? data.periodoIngreso,
+    updatedAt: new Date(),
+    updatedBy: actorId,
   }).where(eq(perfilesAlumno.personaId, personaId)).returning();
   if (!updated) throw notFound('Perfil de alumno no encontrado');
   return updated;

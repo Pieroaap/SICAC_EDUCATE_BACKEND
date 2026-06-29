@@ -54,15 +54,121 @@ export async function assignStudentGuardian(
 
 export async function createPersonWithoutAccess(
   db: Database,
-  input: typeof personas.$inferInsert,
+  input: (typeof personas.$inferInsert) & {
+    initialRole: 'ALUMNO' | 'PROFESOR' | 'GESTOR_ACADEMICO' | 'DIRECTOR_ACADEMICO' | 'ADMINISTRADOR_SISTEMA' | 'TUTOR';
+    alumnoPerfil?: {
+      estado: NonNullable<typeof perfilesAlumno.$inferInsert.estado>;
+      anioIngreso: number;
+      periodoIngreso: string;
+      beneficio: NonNullable<typeof perfilesAlumno.$inferInsert.beneficio>;
+      tipoBeneficio: NonNullable<typeof perfilesAlumno.$inferInsert.tipoBeneficio>;
+    } | undefined;
+    tutor?: ((typeof personas.$inferInsert) & {
+      tipoRelacion: string;
+      fechaInicio?: string | undefined;
+    }) | undefined;
+  },
 ) {
+  const normalizedStudentProfile = input.alumnoPerfil
+    ? {
+      ...input.alumnoPerfil,
+      periodoIngreso: input.alumnoPerfil.periodoIngreso.trim().toUpperCase().replace(/\s*-\s*/, '-'),
+    }
+    : undefined;
+  if (input.initialRole === 'ALUMNO' && !input.alumnoPerfil) {
+    throw badRequest('El perfil de alumno es obligatorio para crear un alumno');
+  }
+  if (input.initialRole !== 'ALUMNO' && input.alumnoPerfil) {
+    throw badRequest('El perfil de alumno solo aplica al rol ALUMNO');
+  }
+  if (normalizedStudentProfile && Number(normalizedStudentProfile.periodoIngreso.slice(0, 4)) !== normalizedStudentProfile.anioIngreso) {
+    throw badRequest('El aÃ±o de ingreso debe coincidir con el periodo de ingreso');
+  }
+  if (input.initialRole !== 'ALUMNO' && input.tutor) {
+    throw badRequest('El tutor inicial solo puede registrarse al crear un alumno');
+  }
+  if (input.tutor
+    && input.tutor.tipoDocumento === input.tipoDocumento
+    && input.tutor.numeroDocumento === input.numeroDocumento) {
+    throw badRequest('El alumno no puede ser su propio tutor');
+  }
+
   const [existing] = await db.select({ id: personas.id }).from(personas).where(and(
     eq(personas.tipoDocumento, input.tipoDocumento),
     eq(personas.numeroDocumento, input.numeroDocumento),
   )).limit(1);
   if (existing) throw conflict('Ya existe una persona con ese documento');
-  const [created] = await db.insert(personas).values(input).returning();
-  return created;
+  if (input.tutor) {
+    const [existingTutor] = await db.select({ id: personas.id }).from(personas).where(and(
+      eq(personas.tipoDocumento, input.tutor.tipoDocumento),
+      eq(personas.numeroDocumento, input.tutor.numeroDocumento),
+    )).limit(1);
+    if (existingTutor) throw conflict('Ya existe una persona con el documento del tutor');
+  }
+
+  return db.transaction(async (tx) => {
+    const {
+      initialRole,
+      alumnoPerfil: _alumnoPerfil,
+      tutor,
+      ...personInput
+    } = input;
+    const alumnoPerfil = normalizedStudentProfile;
+    const [created] = await tx.insert(personas).values(personInput).returning();
+    if (!created) throw new Error('No se pudo crear la persona');
+
+    if (initialRole !== 'TUTOR') {
+      const [role] = await tx.select({ id: roles.id }).from(roles)
+        .where(and(eq(roles.codigo, initialRole), eq(roles.estado, 'activo'))).limit(1);
+      if (!role) throw notFound(`El rol ${initialRole} no existe o está inactivo`);
+      await tx.insert(personasRoles).values({
+        personaId: created.id,
+        rolId: role.id,
+        fechaInicio: alumnoPerfil ? `${alumnoPerfil.anioIngreso}-01-01` : new Date().toISOString().slice(0, 10),
+        createdBy: input.createdBy,
+      });
+    }
+
+    if (alumnoPerfil) {
+      await tx.insert(perfilesAlumno).values({
+        personaId: created.id,
+        ...alumnoPerfil,
+        createdBy: input.createdBy,
+      });
+    }
+
+    let createdTutor: typeof personas.$inferSelect | null = null;
+    let guardianAssignment: typeof alumnoTutores.$inferSelect | null = null;
+    if (tutor) {
+      const {
+        tipoRelacion,
+        fechaInicio,
+        ...tutorInput
+      } = tutor;
+      const [insertedTutor] = await tx.insert(personas).values({
+        ...tutorInput,
+        createdBy: input.createdBy,
+      }).returning();
+      createdTutor = insertedTutor ?? null;
+      if (!createdTutor) throw new Error('No se pudo crear el tutor');
+      const [insertedGuardianAssignment] = await tx.insert(alumnoTutores).values({
+        alumnoPersonaId: created.id,
+        tutorPersonaId: createdTutor.id,
+        tipoRelacion,
+        fechaInicio: fechaInicio ?? new Date().toISOString().slice(0, 10),
+        createdBy: input.createdBy,
+      }).returning();
+      guardianAssignment = insertedGuardianAssignment ?? null;
+    }
+
+    return {
+      person: created,
+      initialRole,
+      alumnoPerfil: alumnoPerfil ?? null,
+      tutor: createdTutor,
+      guardianAssignment,
+    };
+  });
 }
 
 export async function listPeople(

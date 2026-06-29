@@ -24,6 +24,28 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
     fechaNacimiento: z.string().date().nullable().optional(),
     estado: z.enum(['activo', 'inactivo']).optional(),
   });
+  const studentProfileBody = z.object({
+    estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']),
+    anioIngreso: z.number().int().min(1900).max(2100),
+    periodoIngreso: z.string().trim().regex(/^[0-9]{4}\s*-\s*(I|II|III)$/),
+    beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
+    tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
+  });
+  const createPersonBody = personBody.omit({ estado: true }).extend({
+    initialRole: z.enum([
+      'ALUMNO',
+      'PROFESOR',
+      'GESTOR_ACADEMICO',
+      'DIRECTOR_ACADEMICO',
+      'ADMINISTRADOR_SISTEMA',
+      'TUTOR',
+    ]),
+    alumnoPerfil: studentProfileBody.optional(),
+    tutor: personBody.omit({ estado: true }).extend({
+      tipoRelacion: z.string().trim().min(1).max(50),
+      fechaInicio: z.string().date().optional(),
+    }).optional(),
+  });
 
   app.get('/personas', {
     preHandler: [app.authenticate, authorize(...managers)],
@@ -75,12 +97,12 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
     ],
     schema: {
       tags: ['Usuarios'],
-      summary: 'Crear una persona sin acceso al sistema',
-      description: 'No crea usuarios_auth ni cuenta en Supabase Auth.',
+      summary: 'Crear una persona con rol inicial o tutor',
+      description: 'No crea usuarios_auth ni cuenta en Supabase Auth. TUTOR representa una persona apoderada sin rol de sistema.',
       security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
-        required: ['tipoDocumento', 'numeroDocumento', 'nombres', 'apellidoPaterno'],
+        required: ['tipoDocumento', 'numeroDocumento', 'nombres', 'apellidoPaterno', 'initialRole'],
         properties: {
           tipoDocumento: {
             type: 'string',
@@ -93,14 +115,56 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
           correo: { type: 'string', format: 'email' },
           telefono: { type: 'string', maxLength: 30 },
           fechaNacimiento: { type: 'string', format: 'date' },
+          initialRole: {
+            type: 'string',
+            enum: [
+              'ALUMNO',
+              'PROFESOR',
+              'GESTOR_ACADEMICO',
+              'DIRECTOR_ACADEMICO',
+              'ADMINISTRADOR_SISTEMA',
+              'TUTOR',
+            ],
+          },
+          alumnoPerfil: {
+            type: 'object',
+            required: ['estado', 'anioIngreso', 'periodoIngreso', 'beneficio', 'tipoBeneficio'],
+            properties: {
+              estado: { type: 'string', enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'] },
+              anioIngreso: { type: 'integer', minimum: 1900, maximum: 2100 },
+              periodoIngreso: { type: 'string' },
+              beneficio: { type: 'string', enum: ['becado', 'credito', 'becado_credito', 'normal'] },
+              tipoBeneficio: { type: 'string', enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'] },
+            },
+          },
+          tutor: {
+            type: 'object',
+            required: ['tipoDocumento', 'numeroDocumento', 'nombres', 'apellidoPaterno', 'tipoRelacion'],
+            properties: {
+              tipoDocumento: { type: 'string', enum: ['dni', 'pasaporte', 'carnet_extranjeria', 'otro'] },
+              numeroDocumento: { type: 'string', maxLength: 30 },
+              nombres: { type: 'string', maxLength: 150 },
+              apellidoPaterno: { type: 'string', maxLength: 100 },
+              apellidoMaterno: { type: 'string', maxLength: 100 },
+              correo: { type: 'string', format: 'email' },
+              telefono: { type: 'string', maxLength: 30 },
+              fechaNacimiento: { type: 'string', format: 'date' },
+              tipoRelacion: { type: 'string', maxLength: 50 },
+              fechaInicio: { type: 'string', format: 'date' },
+            },
+          },
         },
       },
     },
   }, async (request, reply) => {
-    const body = personBody.omit({ estado: true }).parse(request.body);
+    const body = createPersonBody.parse(request.body);
     const created = await createPersonWithoutAccess(app.db, {
       ...body,
       createdBy: request.auth!.personaId,
+      tutor: body.tutor ? {
+        ...body.tutor,
+        createdBy: request.auth!.personaId,
+      } : undefined,
     });
     return reply.status(201).send(created);
   });

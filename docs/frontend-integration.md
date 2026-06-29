@@ -1,8 +1,7 @@
 # Contrato de integración con el frontend
 
-La fuente interactiva del contrato es Swagger, disponible en
-`/documentacion`. La autenticación utiliza el token Bearer retornado por el
-inicio de sesión con DNI.
+La fuente interactiva del contrato es Swagger, disponible en `/documentacion`.
+La autenticación utiliza el token Bearer retornado por el inicio de sesión con DNI.
 
 ## Sesión y perfil
 
@@ -16,13 +15,18 @@ inicio de sesión con DNI.
 ## Flujos operativos
 
 - Catálogos: carreras, planes curriculares, cursos, cursos del plan y periodos.
-- Identidad: `GET /personas`, `GET /alumnos` y `GET /profesores` ofrecen búsqueda,
-  filtro por estado y paginación con la forma `{ data, pagination }`.
+- Identidad: `GET /personas`, `GET /alumnos` y `GET /profesores` ofrecen
+  búsqueda, filtro por estado y paginación con la forma `{ data, pagination }`.
   `GET /personas/:id` devuelve roles, acceso, perfil de alumno cuando exista y
-  tutores con datos básicos del tutor. `POST /personas` y
-  `PATCH /personas/:id` crean y actualizan datos personales.
-  `PATCH /alumnos/:personaId` actualiza el estado operativo o beneficio del
-  alumno sin cambiar el estado base de la persona ni el estado del rol.
+  tutores con datos básicos del tutor. `POST /personas` exige `initialRole`.
+  Para `ALUMNO` también exige `alumnoPerfil` con estado operativo, año, periodo,
+  beneficio y tipo de beneficio; opcionalmente recibe `tutor` para crear en la
+  misma transacción una segunda persona sin rol y vincularla como tutor activo.
+  `initialRole: "TUTOR"` crea una persona sin rol de sistema.
+  `PATCH /personas/:id` actualiza datos personales.
+  `PATCH /alumnos/:personaId` actualiza estado operativo, año, periodo,
+  beneficio o tipo de beneficio del alumno sin cambiar el estado base de la
+  persona ni el estado del rol.
   `POST /personas/:personaId/acceso` habilita acceso para una persona existente,
   `POST /usuarios/:personaId/reiniciar-clave` reinicia una clave temporal y
   `POST /alumnos/:id/tutores` asigna tutores respetando el máximo de dos activos.
