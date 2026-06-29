@@ -477,7 +477,7 @@ export async function listTeachers(
     dni: personas.numeroDocumento,
     correo: personas.correo,
     estado: personasRoles.estado,
-    tieneAcceso: usuariosAuth.id,
+    tieneAcceso: sql<string | null>`${usuariosAuth.id}`.as('tiene_acceso'),
   }).from(personasRoles)
     .innerJoin(personas, eq(personas.id, personasRoles.personaId))
     .innerJoin(roles, eq(roles.id, personasRoles.rolId))
