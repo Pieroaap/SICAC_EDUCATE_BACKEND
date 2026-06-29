@@ -13,8 +13,30 @@ export async function registerStudentRoutes(app: FastifyInstance): Promise<void>
       tags: ['Alumnos'],
       summary: 'Listar alumnos en formato consolidado',
       security,
+      querystring: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', maxLength: 100 },
+          estado: {
+            type: 'string',
+            enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'],
+          },
+          page: { type: 'integer', minimum: 1, default: 1 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+        },
+      },
     },
-  }, async () => listStudents(app.db));
+  }, async (request) => {
+    const query = z.object({
+      search: z.string().trim().max(100).optional(),
+      estado: z.enum([
+        'activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado',
+      ]).optional(),
+      page: z.coerce.number().int().min(1).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    }).parse(request.query);
+    return listStudents(app.db, query);
+  });
 
   app.patch('/alumnos/:personaId', {
     preHandler: [app.authenticate, authorize(...managers)],

@@ -1,4 +1,15 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  or,
+  SQL,
+  sql,
+} from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
 import {
   carreras,
@@ -210,14 +221,45 @@ export async function importStudents(
   };
 }
 
-export async function listStudents(db: Database) {
-  const students = await db.select({
-    persona: personas,
-    profile: perfilesAlumno,
-    hasAccess: usuariosAuth.id,
-  }).from(perfilesAlumno)
-    .innerJoin(personas, eq(personas.id, perfilesAlumno.personaId))
-    .leftJoin(usuariosAuth, eq(usuariosAuth.personaId, personas.id));
+export async function listStudents(
+  db: Database,
+  filters: {
+    search?: string | undefined;
+    estado?: StudentState | undefined;
+    page: number;
+    pageSize: number;
+  },
+) {
+  const conditions: SQL[] = [];
+  if (filters.estado) conditions.push(eq(perfilesAlumno.estado, filters.estado));
+  if (filters.search) {
+    const term = `%${filters.search}%`;
+    conditions.push(or(
+      ilike(personas.numeroDocumento, term),
+      ilike(personas.nombres, term),
+      ilike(personas.apellidoPaterno, term),
+      ilike(personas.apellidoMaterno, term),
+      ilike(personas.correo, term),
+    )!);
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const offset = (filters.page - 1) * filters.pageSize;
+  const [[totalRow], students] = await Promise.all([
+    db.select({ total: count() }).from(perfilesAlumno)
+      .innerJoin(personas, eq(personas.id, perfilesAlumno.personaId))
+      .where(where),
+    db.select({
+      persona: personas,
+      profile: perfilesAlumno,
+      hasAccess: usuariosAuth.id,
+    }).from(perfilesAlumno)
+      .innerJoin(personas, eq(personas.id, perfilesAlumno.personaId))
+      .leftJoin(usuariosAuth, eq(usuariosAuth.personaId, personas.id))
+      .where(where)
+      .orderBy(asc(personas.apellidoPaterno), asc(personas.apellidoMaterno), asc(personas.nombres))
+      .limit(filters.pageSize)
+      .offset(offset),
+  ]);
   const personIds = students.map((item) => item.persona.id);
   const enrollments = personIds.length === 0 ? [] : await db.select({
     enrollment: matriculasCarrera,
@@ -228,7 +270,7 @@ export async function listStudents(db: Database) {
     .innerJoin(planesCurriculares, eq(planesCurriculares.id, matriculasCarrera.planCurricularId))
     .where(inArray(matriculasCarrera.personaId, personIds))
     .orderBy(desc(matriculasCarrera.fechaMatricula));
-  return students.map(({ persona, profile, hasAccess }) => {
+  const data = students.map(({ persona, profile, hasAccess }) => {
     const current = enrollments.find((item) => item.enrollment.personaId === persona.id);
     return {
       id: persona.id,
@@ -246,6 +288,16 @@ export async function listStudents(db: Database) {
       plan: current?.planName ?? null,
     };
   });
+  const total = totalRow?.total ?? 0;
+  return {
+    data,
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total,
+      totalPages: Math.ceil(total / filters.pageSize),
+    },
+  };
 }
 
 export async function updateStudentProfile(

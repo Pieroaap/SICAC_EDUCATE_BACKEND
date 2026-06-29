@@ -149,8 +149,25 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
       tags: ['Profesores'],
       summary: 'Listar profesores con su estado y acceso',
       security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          search: { type: 'string', maxLength: 100 },
+          estado: { type: 'string', enum: ['activo', 'inactivo'] },
+          page: { type: 'integer', minimum: 1, default: 1 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+        },
+      },
     },
-  }, async () => listTeachers(app.db));
+  }, async (request) => {
+    const query = z.object({
+      search: z.string().trim().max(100).optional(),
+      estado: z.enum(['activo', 'inactivo']).optional(),
+      page: z.coerce.number().int().min(1).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    }).parse(request.query);
+    return listTeachers(app.db, query);
+  });
 
   app.post('/importaciones/profesores', {
     preHandler: [app.authenticate, authorize('ADMINISTRADOR_SISTEMA')],

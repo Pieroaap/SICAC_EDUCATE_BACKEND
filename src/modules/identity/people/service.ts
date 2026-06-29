@@ -12,6 +12,7 @@ import {
   SQL,
   sql,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from '../../../infrastructure/database/client.js';
 import {
   alumnoTutores,
@@ -139,6 +140,7 @@ export async function listPeople(
 }
 
 export async function getPersonDetail(db: Database, personId: string) {
+  const guardianPerson = alias(personas, 'guardian_person');
   const [person] = await db.select({
     id: personas.id,
     tipoDocumento: personas.tipoDocumento,
@@ -171,11 +173,16 @@ export async function getPersonDetail(db: Database, personId: string) {
     db.select({
       id: alumnoTutores.id,
       tutorPersonaId: alumnoTutores.tutorPersonaId,
+      tutorDocumento: guardianPerson.numeroDocumento,
+      tutorNombres: guardianPerson.nombres,
+      tutorApellidoPaterno: guardianPerson.apellidoPaterno,
+      tutorApellidoMaterno: guardianPerson.apellidoMaterno,
       tipoRelacion: alumnoTutores.tipoRelacion,
       estado: alumnoTutores.estado,
       fechaInicio: alumnoTutores.fechaInicio,
       fechaFin: alumnoTutores.fechaFin,
     }).from(alumnoTutores)
+      .innerJoin(guardianPerson, eq(guardianPerson.id, alumnoTutores.tutorPersonaId))
       .where(eq(alumnoTutores.alumnoPersonaId, personId))
       .orderBy(desc(alumnoTutores.fechaInicio)),
   ]);
@@ -335,8 +342,17 @@ export async function importTeachers(
   };
 }
 
-export async function listTeachers(db: Database) {
-  return db.select({
+export async function listTeachers(
+  db: Database,
+  filters: {
+    search?: string | undefined;
+    estado?: 'activo' | 'inactivo' | undefined;
+    page: number;
+    pageSize: number;
+  },
+) {
+  const offset = (filters.page - 1) * filters.pageSize;
+  const latestTeachers = db.selectDistinctOn([personas.id], {
     id: personas.id,
     nombres: personas.nombres,
     apellidoPaterno: personas.apellidoPaterno,
@@ -347,6 +363,46 @@ export async function listTeachers(db: Database) {
     tieneAcceso: usuariosAuth.id,
   }).from(personasRoles)
     .innerJoin(personas, eq(personas.id, personasRoles.personaId))
-    .innerJoin(roles, and(eq(roles.id, personasRoles.rolId), eq(roles.codigo, 'PROFESOR')))
-    .leftJoin(usuariosAuth, eq(usuariosAuth.personaId, personas.id));
+    .innerJoin(roles, eq(roles.id, personasRoles.rolId))
+    .leftJoin(usuariosAuth, eq(usuariosAuth.personaId, personas.id))
+    .where(eq(roles.codigo, 'PROFESOR'))
+    .orderBy(personas.id, desc(personasRoles.fechaInicio))
+    .as('latest_teachers');
+  const currentConditions: SQL[] = [];
+  if (filters.estado) currentConditions.push(eq(latestTeachers.estado, filters.estado));
+  if (filters.search) {
+    const term = `%${filters.search}%`;
+    currentConditions.push(or(
+      ilike(latestTeachers.dni, term),
+      ilike(latestTeachers.nombres, term),
+      ilike(latestTeachers.apellidoPaterno, term),
+      ilike(latestTeachers.apellidoMaterno, term),
+      ilike(latestTeachers.correo, term),
+    )!);
+  }
+  const currentWhere = currentConditions.length > 0 ? and(...currentConditions) : undefined;
+  const [[totalRow], teachers] = await Promise.all([
+    db.select({ total: count() }).from(latestTeachers).where(currentWhere),
+    db.select().from(latestTeachers)
+      .where(currentWhere)
+      .orderBy(
+        asc(latestTeachers.apellidoPaterno),
+        asc(latestTeachers.apellidoMaterno),
+        asc(latestTeachers.nombres),
+      )
+      .limit(filters.pageSize)
+      .offset(offset),
+  ]);
+  const data = teachers
+    .map((teacher) => ({ ...teacher, tieneAcceso: Boolean(teacher.tieneAcceso) }));
+  const total = totalRow?.total ?? 0;
+  return {
+    data,
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total,
+      totalPages: Math.ceil(total / filters.pageSize),
+    },
+  };
 }

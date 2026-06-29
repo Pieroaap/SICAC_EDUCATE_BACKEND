@@ -16,9 +16,14 @@ inicio de sesión con DNI.
 ## Flujos operativos
 
 - Catálogos: carreras, planes curriculares, cursos, cursos del plan y periodos.
-- Identidad: `GET /personas` ofrece búsqueda y paginación; `GET /personas/:id`
-  devuelve roles, acceso y tutores; `POST /personas` y `PATCH /personas/:id`
-  crean y actualizan datos personales.
+- Identidad: `GET /personas`, `GET /alumnos` y `GET /profesores` ofrecen búsqueda,
+  filtro por estado y paginación con la forma `{ data, pagination }`.
+  `GET /personas/:id` devuelve roles, acceso y tutores con datos básicos del
+  tutor. `POST /personas` y `PATCH /personas/:id` crean y actualizan datos
+  personales. `POST /personas/:personaId/acceso` habilita acceso para una
+  persona existente, `POST /usuarios/:personaId/reiniciar-clave` reinicia una
+  clave temporal y `POST /alumnos/:id/tutores` asigna tutores respetando el
+  máximo de dos activos.
 - Programación: crear, listar y actualizar cursos programados.
 - Matrículas: crear matrículas, inscribir cursos y consultar el historial.
 - Prerrequisitos: solicitar excepciones y resolverlas como Dirección Académica.
