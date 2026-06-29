@@ -22,7 +22,7 @@ export async function registerStudentRoutes(app: FastifyInstance): Promise<void>
             enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'],
           },
           page: { type: 'integer', minimum: 1, default: 1 },
-          pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 20, default: 20 },
         },
       },
     },
@@ -33,7 +33,7 @@ export async function registerStudentRoutes(app: FastifyInstance): Promise<void>
         'activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado',
       ]).optional(),
       page: z.coerce.number().int().min(1).default(1),
-      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      pageSize: z.coerce.number().int().min(1).max(20).default(20),
     }).parse(request.query);
     return listStudents(app.db, query);
   });

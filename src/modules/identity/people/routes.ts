@@ -59,7 +59,7 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
           search: { type: 'string', maxLength: 100 },
           estado: { type: 'string', enum: ['activo', 'inactivo'] },
           page: { type: 'integer', minimum: 1, default: 1 },
-          pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 20, default: 20 },
         },
       },
     },
@@ -68,7 +68,7 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
       search: z.string().trim().max(100).optional(),
       estado: z.enum(['activo', 'inactivo']).optional(),
       page: z.coerce.number().int().min(1).default(1),
-      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      pageSize: z.coerce.number().int().min(1).max(20).default(20),
     }).parse(request.query);
     return listPeople(app.db, query);
   });
@@ -219,7 +219,7 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
           search: { type: 'string', maxLength: 100 },
           estado: { type: 'string', enum: ['activo', 'inactivo'] },
           page: { type: 'integer', minimum: 1, default: 1 },
-          pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 20, default: 20 },
         },
       },
     },
@@ -228,7 +228,7 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
       search: z.string().trim().max(100).optional(),
       estado: z.enum(['activo', 'inactivo']).optional(),
       page: z.coerce.number().int().min(1).default(1),
-      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      pageSize: z.coerce.number().int().min(1).max(20).default(20),
     }).parse(request.query);
     return listTeachers(app.db, query);
   });
