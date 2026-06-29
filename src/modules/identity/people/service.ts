@@ -16,6 +16,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from '../../../infrastructure/database/client.js';
 import {
   alumnoTutores,
+  perfilesAlumno,
   personas,
   personasRoles,
   roles,
@@ -159,7 +160,7 @@ export async function getPersonDetail(db: Database, personId: string) {
     .limit(1);
   if (!person) throw notFound('Persona no encontrada');
 
-  const [assignments, guardians] = await Promise.all([
+  const [assignments, guardians, studentProfiles] = await Promise.all([
     db.select({
       codigo: roles.codigo,
       nombre: roles.nombre,
@@ -185,6 +186,15 @@ export async function getPersonDetail(db: Database, personId: string) {
       .innerJoin(guardianPerson, eq(guardianPerson.id, alumnoTutores.tutorPersonaId))
       .where(eq(alumnoTutores.alumnoPersonaId, personId))
       .orderBy(desc(alumnoTutores.fechaInicio)),
+    db.select({
+      estado: perfilesAlumno.estado,
+      anioIngreso: perfilesAlumno.anioIngreso,
+      periodoIngreso: perfilesAlumno.periodoIngreso,
+      beneficio: perfilesAlumno.beneficio,
+      tipoBeneficio: perfilesAlumno.tipoBeneficio,
+    }).from(perfilesAlumno)
+      .where(eq(perfilesAlumno.personaId, personId))
+      .limit(1),
   ]);
 
   return {
@@ -192,6 +202,7 @@ export async function getPersonDetail(db: Database, personId: string) {
     tieneAcceso: Boolean(person.tieneAcceso),
     roles: assignments,
     tutores: guardians,
+    alumnoPerfil: studentProfiles[0] ?? null,
   };
 }
 
