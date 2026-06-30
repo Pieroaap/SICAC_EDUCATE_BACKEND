@@ -330,12 +330,58 @@ export async function updatePerson(
   data: UpdatePersonInput,
   actorId: string,
 ) {
+  if (data.tipoDocumento || data.numeroDocumento) {
+    const [current] = await db.select({
+      tipoDocumento: personas.tipoDocumento,
+      numeroDocumento: personas.numeroDocumento,
+    }).from(personas).where(eq(personas.id, personId)).limit(1);
+    if (!current) throw notFound('Persona no encontrada');
+    const nextDocumentType = data.tipoDocumento ?? current.tipoDocumento;
+    const nextDocumentNumber = data.numeroDocumento ?? current.numeroDocumento;
+    if (nextDocumentType !== current.tipoDocumento || nextDocumentNumber !== current.numeroDocumento) {
+      const [existing] = await db.select({ id: personas.id }).from(personas).where(and(
+        eq(personas.tipoDocumento, nextDocumentType),
+        eq(personas.numeroDocumento, nextDocumentNumber),
+      )).limit(1);
+      if (existing && existing.id !== personId) throw conflict('Ya existe una persona con ese documento');
+    }
+  }
   const [updated] = await db.update(personas).set({
     ...data,
     updatedAt: new Date(),
     updatedBy: actorId,
   }).where(eq(personas.id, personId)).returning();
   if (!updated) throw notFound('Persona no encontrada');
+  return updated;
+}
+
+export async function updateTeacherRoleStatus(
+  db: Database,
+  personId: string,
+  estado: NonNullable<typeof personasRoles.$inferInsert.estado>,
+  actorId: string,
+) {
+  const [assignment] = await db.select({
+    personaId: personasRoles.personaId,
+    rolId: personasRoles.rolId,
+    fechaInicio: personasRoles.fechaInicio,
+  }).from(personasRoles)
+    .innerJoin(roles, eq(roles.id, personasRoles.rolId))
+    .where(and(eq(personasRoles.personaId, personId), eq(roles.codigo, 'PROFESOR')))
+    .orderBy(desc(personasRoles.fechaInicio))
+    .limit(1);
+  if (!assignment) throw notFound('La persona no tiene rol PROFESOR');
+
+  const [updated] = await db.update(personasRoles).set({
+    estado,
+    updatedAt: new Date(),
+    updatedBy: actorId,
+  }).where(and(
+    eq(personasRoles.personaId, assignment.personaId),
+    eq(personasRoles.rolId, assignment.rolId),
+    eq(personasRoles.fechaInicio, assignment.fechaInicio),
+  )).returning();
+  if (!updated) throw notFound('La asignación de profesor no fue encontrada');
   return updated;
 }
 

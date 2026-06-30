@@ -9,6 +9,7 @@ import {
   listPeople,
   listTeachers,
   updatePerson,
+  updateTeacherRoleStatus,
 } from './service.js';
 
 export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> {
@@ -231,6 +232,34 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
       pageSize: z.coerce.number().int().min(1).max(20).default(20),
     }).parse(request.query);
     return listTeachers(app.db, query);
+  });
+
+  app.patch('/profesores/:personaId', {
+    preHandler: [
+      app.authenticate,
+      authorize('ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO'),
+    ],
+    schema: {
+      tags: ['Profesores'],
+      summary: 'Actualizar estado del rol profesor',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['personaId'],
+        properties: { personaId: { type: 'string', format: 'uuid' } },
+      },
+      body: {
+        type: 'object',
+        required: ['estado'],
+        properties: {
+          estado: { type: 'string', enum: ['activo', 'inactivo'] },
+        },
+      },
+    },
+  }, async (request) => {
+    const params = z.object({ personaId: z.string().uuid() }).parse(request.params);
+    const body = z.object({ estado: z.enum(['activo', 'inactivo']) }).parse(request.body);
+    return updateTeacherRoleStatus(app.db, params.personaId, body.estado, request.auth!.personaId);
   });
 
   app.post('/importaciones/profesores', {
