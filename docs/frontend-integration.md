@@ -40,6 +40,9 @@ La autenticación utiliza el token Bearer retornado por el inicio de sesión con
 
 ## Dashboard
 
+Nota de identidad: `GET /personas` acepta, ademas de `search`, `estado`,
+`page` y `pageSize`, el filtro `rol` con codigo de rol activo.
+
 `GET /dashboard` devuelve cuatro secciones: `periodoActivo`, `metrics`, `alerts`
 y `quickActions`. Todas pueden estar vacías salvo la estructura de la respuesta.
 El frontend debe omitir secciones vacías; cuando no existan métricas ni alertas,

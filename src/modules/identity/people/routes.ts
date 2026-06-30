@@ -32,6 +32,13 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
     beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
     tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
   });
+  const roleCode = z.enum([
+    'ALUMNO',
+    'PROFESOR',
+    'GESTOR_ACADEMICO',
+    'DIRECTOR_ACADEMICO',
+    'ADMINISTRADOR_SISTEMA',
+  ]);
   const createPersonBody = personBody.omit({ estado: true }).extend({
     initialRole: z.enum([
       'ALUMNO',
@@ -59,6 +66,16 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
         properties: {
           search: { type: 'string', maxLength: 100 },
           estado: { type: 'string', enum: ['activo', 'inactivo'] },
+          rol: {
+            type: 'string',
+            enum: [
+              'ALUMNO',
+              'PROFESOR',
+              'GESTOR_ACADEMICO',
+              'DIRECTOR_ACADEMICO',
+              'ADMINISTRADOR_SISTEMA',
+            ],
+          },
           page: { type: 'integer', minimum: 1, default: 1 },
           pageSize: { type: 'integer', minimum: 1, maximum: 20, default: 20 },
         },
@@ -68,6 +85,7 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
     const query = z.object({
       search: z.string().trim().max(100).optional(),
       estado: z.enum(['activo', 'inactivo']).optional(),
+      rol: roleCode.optional(),
       page: z.coerce.number().int().min(1).default(1),
       pageSize: z.coerce.number().int().min(1).max(20).default(20),
     }).parse(request.query);

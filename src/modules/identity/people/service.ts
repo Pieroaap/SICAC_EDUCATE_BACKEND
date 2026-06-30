@@ -176,12 +176,23 @@ export async function listPeople(
   filters: {
     search?: string | undefined;
     estado?: 'activo' | 'inactivo' | undefined;
+    rol?: string | undefined;
     page: number;
     pageSize: number;
   },
 ) {
   const conditions: SQL[] = [];
   if (filters.estado) conditions.push(eq(personas.estado, filters.estado));
+  if (filters.rol) {
+    conditions.push(sql`exists (
+      select 1
+      from personas_roles pr
+      inner join roles r on r.id = pr.rol_id
+      where pr.persona_id = ${personas.id}
+        and pr.estado = 'activo'
+        and r.codigo = ${filters.rol}
+    )`);
+  }
   if (filters.search) {
     const term = `%${filters.search}%`;
     conditions.push(or(
@@ -226,12 +237,16 @@ export async function listPeople(
     .where(inArray(personasRoles.personaId, personIds))
     .orderBy(asc(roles.nombre));
 
+  const rolesByPerson = new Map<string, Array<{ codigo: string; nombre: string; estado: 'activo' | 'inactivo' }>>();
+  for (const { personaId, codigo, nombre, estado } of assignments) {
+    const current = rolesByPerson.get(personaId) ?? [];
+    current.push({ codigo, nombre, estado });
+    rolesByPerson.set(personaId, current);
+  }
   const data = people.map((person) => ({
     ...person,
     tieneAcceso: Boolean(person.tieneAcceso),
-    roles: assignments
-      .filter((assignment) => assignment.personaId === person.id)
-      .map(({ codigo, nombre, estado }) => ({ codigo, nombre, estado })),
+    roles: rolesByPerson.get(person.id) ?? [],
   }));
   const total = totalRow?.total ?? 0;
 
