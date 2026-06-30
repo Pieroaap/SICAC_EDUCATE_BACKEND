@@ -27,6 +27,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await registerSwagger(app);
   await app.register(cors, {
     origin: env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   await app.register(databasePlugin);
   await app.register(supabasePlugin);
