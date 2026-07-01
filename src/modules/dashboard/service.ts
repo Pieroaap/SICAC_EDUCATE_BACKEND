@@ -48,7 +48,6 @@ export function buildQuickActions(roles: string[]): QuickAction[] {
 async function getActivePeriod(db: Database, today: string) {
   const [period] = await db.select({
     id: periodosAcademicos.id,
-    codigo: periodosAcademicos.codigo,
     nombre: periodosAcademicos.nombre,
     fechaInicio: periodosAcademicos.fechaInicio,
     fechaFin: periodosAcademicos.fechaFin,
@@ -177,4 +176,3 @@ export async function getDashboard(
     quickActions: buildQuickActions(input.roles),
   };
 }
-

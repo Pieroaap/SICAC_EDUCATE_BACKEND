@@ -1,13 +1,37 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { carreras, cursos, periodosAcademicos, planCursos, planesCurriculares } from '../../db/schema/index.js';
+import { carreras, cursos, periodosAcademicos, planesCurriculares } from '../../db/schema/index.js';
 import { authorize } from '../../infrastructure/http/authorize.js';
-import { addCourseToPlan, createCareer, createCourse, createPlan, createPrerequisite, getCareerPlan } from './service.js';
+import {
+  addCourseToPlan, createCareer, createCourse, createPlan, getCareerPlan, listPlanCourses, updatePlanCourse,
+} from './service.js';
 
 const managers = ['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO'];
 const id = z.string().uuid();
 const catalog = z.object({ codigo: z.string().min(1).max(30), nombre: z.string().min(1).max(150), descripcion: z.string().optional() });
+const course = z.object({
+  codigo: z.string().trim().min(1).max(30),
+  nombre: z.string().trim().min(1).max(150),
+  tipo: z.enum(['obligatorio', 'electivo']),
+});
+const planCourse = z.object({
+  planCurricularId: id,
+  cursoId: id,
+  ciclo: z.number().int().positive(),
+  orden: z.number().int().positive(),
+  prerequisiteIds: z.array(id).max(2).default([]),
+});
+const academicPeriodFields = z.object({
+  anio: z.number().int().min(1900).max(9999),
+  periodo: z.enum(['I', 'II', 'III']),
+  fechaInicio: z.string().date(),
+  fechaFin: z.string().date(),
+});
+const academicPeriod = academicPeriodFields.refine((value) => value.fechaFin >= value.fechaInicio, {
+  message: 'La fecha de fin debe ser igual o posterior a la fecha de inicio',
+  path: ['fechaFin'],
+});
 const security = [{ bearerAuth: [] }];
 const idParams = {
   type: 'object',
@@ -96,8 +120,16 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
   });
   app.post('/cursos', {
     ...guarded,
-    schema: docs('Crear un curso', catalogBody),
-  }, async (r) => createCourse(app.db, { ...catalog.parse(r.body), createdBy: r.auth!.personaId }));
+    schema: docs('Crear un curso', {
+      type: 'object',
+      required: ['codigo', 'nombre', 'tipo'],
+      properties: {
+        codigo: { type: 'string', maxLength: 30 },
+        nombre: { type: 'string', maxLength: 150 },
+        tipo: { type: 'string', enum: ['obligatorio', 'electivo'] },
+      },
+    }),
+  }, async (r) => createCourse(app.db, { ...course.parse(r.body), createdBy: r.auth!.personaId }));
   app.get('/cursos', {
     preHandler: [app.authenticate],
     schema: docs('Listar cursos'),
@@ -109,13 +141,13 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
       properties: {
         codigo: { type: 'string', maxLength: 30 },
         nombre: { type: 'string', maxLength: 150 },
-        descripcion: { type: 'string' },
+        tipo: { type: 'string', enum: ['obligatorio', 'electivo'] },
         estado: { type: 'string', enum: ['activo', 'inactivo'] },
       },
     }, idParams),
   }, async (r) => {
     const params = z.object({ id }).parse(r.params);
-    const data = catalog.partial().extend({ estado: z.enum(['activo', 'inactivo']).optional() }).parse(r.body);
+    const data = course.partial().extend({ estado: z.enum(['activo', 'inactivo']).optional() }).parse(r.body);
     return app.db.update(cursos).set({
       ...data, updatedBy: r.auth!.personaId, updatedAt: new Date(),
     }).where(eq(cursos.id, params.id)).returning();
@@ -130,16 +162,17 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
         cursoId: { type: 'string', format: 'uuid' },
         ciclo: { type: 'integer', minimum: 1 },
         orden: { type: 'integer', minimum: 1 },
+        prerequisiteIds: { type: 'array', maxItems: 2, items: { type: 'string', format: 'uuid' } },
       },
     }),
   }, async (r) => {
-    const body = z.object({ planCurricularId: id, cursoId: id, ciclo: z.number().int().positive(), orden: z.number().int().positive() }).parse(r.body);
+    const body = planCourse.parse(r.body);
     return addCourseToPlan(app.db, { ...body, createdBy: r.auth!.personaId });
   });
   app.get('/plan-cursos', {
     preHandler: [app.authenticate],
     schema: docs('Listar cursos asignados a planes'),
-  }, () => app.db.select().from(planCursos));
+  }, () => listPlanCourses(app.db));
   app.patch('/plan-cursos/:id', {
     ...guarded,
     schema: docs('Actualizar un curso del plan', {
@@ -148,6 +181,7 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
         ciclo: { type: 'integer', minimum: 1 },
         orden: { type: 'integer', minimum: 1 },
         estado: { type: 'string', enum: ['activo', 'inactivo'] },
+        prerequisiteIds: { type: 'array', maxItems: 2, items: { type: 'string', format: 'uuid' } },
       },
     }, idParams),
   }, async (r) => {
@@ -156,32 +190,9 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
       ciclo: z.number().int().positive().optional(),
       orden: z.number().int().positive().optional(),
       estado: z.enum(['activo', 'inactivo']).optional(),
+      prerequisiteIds: z.array(id).max(2),
     }).parse(r.body);
-    return app.db.update(planCursos).set({
-      ...data, updatedBy: r.auth!.personaId, updatedAt: new Date(),
-    }).where(eq(planCursos.id, params.id)).returning();
-  });
-  app.post('/prerrequisitos', {
-    ...guarded,
-    schema: docs('Asignar un prerrequisito', {
-      type: 'object',
-      required: ['planCursoId', 'cursoPrerrequisitoId'],
-      properties: {
-        planCursoId: { type: 'string', format: 'uuid' },
-        cursoPrerrequisitoId: { type: 'string', format: 'uuid' },
-      },
-    }),
-  }, async (r) => {
-    const body = z.object({ planCursoId: id, cursoPrerrequisitoId: id }).parse(r.body);
-    return createPrerequisite(app.db, { ...body, createdBy: r.auth!.personaId });
-  });
-  app.delete('/prerrequisitos/:id', {
-    ...guarded,
-    schema: docs('Eliminar un prerrequisito', undefined, idParams),
-  }, async (r, reply) => {
-    const params = z.object({ id }).parse(r.params);
-    await app.db.delete((await import('../../db/schema/index.js')).cursoPrerrequisitos).where(eq((await import('../../db/schema/index.js')).cursoPrerrequisitos.id, params.id));
-    return reply.status(204).send();
+    return updatePlanCourse(app.db, params.id, { ...data, updatedBy: r.auth!.personaId });
   });
   app.get('/periodos-academicos', {
     preHandler: [app.authenticate],
@@ -191,24 +202,29 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
     ...guarded,
     schema: docs('Crear un periodo académico', {
       type: 'object',
-      required: ['codigo', 'nombre', 'fechaInicio', 'fechaFin'],
+      required: ['anio', 'periodo', 'fechaInicio', 'fechaFin'],
       properties: {
-        codigo: { type: 'string' },
-        nombre: { type: 'string' },
+        anio: { type: 'integer', minimum: 1900, maximum: 9999 },
+        periodo: { type: 'string', enum: ['I', 'II', 'III'] },
         fechaInicio: { type: 'string', format: 'date' },
         fechaFin: { type: 'string', format: 'date' },
       },
     }),
   }, async (r) => {
-    const body = z.object({ codigo: z.string(), nombre: z.string(), fechaInicio: z.string().date(), fechaFin: z.string().date() }).parse(r.body);
-    return app.db.insert(periodosAcademicos).values({ ...body, createdBy: r.auth!.personaId }).returning();
+    const body = academicPeriod.parse(r.body);
+    return app.db.insert(periodosAcademicos).values({
+      ...body,
+      nombre: `${body.anio} - ${body.periodo}`,
+      createdBy: r.auth!.personaId,
+    }).returning();
   });
   app.patch('/periodos-academicos/:id', {
     ...guarded,
     schema: docs('Actualizar un periodo académico', {
       type: 'object',
       properties: {
-        nombre: { type: 'string' },
+        anio: { type: 'integer', minimum: 1900, maximum: 9999 },
+        periodo: { type: 'string', enum: ['I', 'II', 'III'] },
         fechaInicio: { type: 'string', format: 'date' },
         fechaFin: { type: 'string', format: 'date' },
         estado: { type: 'string', enum: ['activo', 'inactivo'] },
@@ -216,7 +232,19 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
     }, idParams),
   }, async (r) => {
     const params = z.object({ id }).parse(r.params);
-    const data = z.object({ nombre: z.string(), fechaInicio: z.string().date(), fechaFin: z.string().date(), estado: z.enum(['activo', 'inactivo']) }).partial().parse(r.body);
-    return app.db.update(periodosAcademicos).set({ ...data, updatedAt: new Date(), updatedBy: r.auth!.personaId }).where(eq(periodosAcademicos.id, params.id)).returning();
+    const data = academicPeriodFields.partial().extend({
+      estado: z.enum(['activo', 'inactivo']).optional(),
+    }).parse(r.body);
+    const [current] = await app.db.select().from(periodosAcademicos)
+      .where(eq(periodosAcademicos.id, params.id)).limit(1);
+    if (!current) return [];
+    const next = { ...current, ...data };
+    academicPeriod.parse(next);
+    return app.db.update(periodosAcademicos).set({
+      ...data,
+      nombre: `${next.anio} - ${next.periodo}`,
+      updatedAt: new Date(),
+      updatedBy: r.auth!.personaId,
+    }).where(eq(periodosAcademicos.id, params.id)).returning();
   });
 }

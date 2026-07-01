@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
-  check, date, index, integer, pgTable, text, uniqueIndex, uuid, varchar,
+  check, date, index, integer, pgEnum, pgTable, text, uniqueIndex, uuid, varchar,
 } from 'drizzle-orm/pg-core';
 import { auditColumns } from './common.js';
 import { activeStateEnum } from './identity.js';
@@ -26,11 +26,13 @@ export const planesCurriculares = pgTable('planes_curriculares', {
   uniqueIndex('planes_curriculares_carrera_codigo_version_uq').on(t.carreraId, t.codigo, t.version),
 ]);
 
+export const courseTypeEnum = pgEnum('course_type', ['obligatorio', 'electivo']);
+
 export const cursos = pgTable('cursos', {
   id: uuid('id').primaryKey().defaultRandom(),
   codigo: varchar('codigo', { length: 30 }).notNull(),
   nombre: varchar('nombre', { length: 150 }).notNull(),
-  descripcion: text('descripcion'),
+  tipo: courseTypeEnum('tipo').notNull().default('obligatorio'),
   estado: activeStateEnum('estado').notNull().default('activo'),
   ...auditColumns,
 }, (t) => [uniqueIndex('cursos_codigo_uq').on(t.codigo)]);
@@ -61,15 +63,19 @@ export const cursoPrerrequisitos = pgTable('curso_prerrequisitos', {
   check('curso_prerrequisitos_no_self_ck', sql`${t.planCursoId} <> ${t.cursoPrerrequisitoId}`),
 ]);
 
+export const academicPeriodEnum = pgEnum('academic_period_number', ['I', 'II', 'III']);
+
 export const periodosAcademicos = pgTable('periodos_academicos', {
   id: uuid('id').primaryKey().defaultRandom(),
-  codigo: varchar('codigo', { length: 30 }).notNull(),
+  anio: integer('anio').notNull(),
+  periodo: academicPeriodEnum('periodo').notNull(),
   nombre: varchar('nombre', { length: 100 }).notNull(),
   fechaInicio: date('fecha_inicio').notNull(),
   fechaFin: date('fecha_fin').notNull(),
   estado: activeStateEnum('estado').notNull().default('activo'),
   ...auditColumns,
 }, (t) => [
-  uniqueIndex('periodos_academicos_codigo_uq').on(t.codigo),
+  uniqueIndex('periodos_academicos_anio_periodo_uq').on(t.anio, t.periodo),
+  check('periodos_academicos_anio_ck', sql`${t.anio} between 1900 and 9999`),
   check('periodos_academicos_fechas_ck', sql`${t.fechaFin} >= ${t.fechaInicio}`),
 ]);

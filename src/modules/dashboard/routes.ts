@@ -18,10 +18,9 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
                 { type: 'null' },
                 {
                   type: 'object',
-                  required: ['id', 'codigo', 'nombre', 'fechaInicio', 'fechaFin'],
+                  required: ['id', 'nombre', 'fechaInicio', 'fechaFin'],
                   properties: {
                     id: { type: 'string', format: 'uuid' },
-                    codigo: { type: 'string' },
                     nombre: { type: 'string' },
                     fechaInicio: { type: 'string', format: 'date' },
                     fechaFin: { type: 'string', format: 'date' },
@@ -76,4 +75,3 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
     roles: request.auth!.roles,
   }));
 }
-

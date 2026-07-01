@@ -29,6 +29,13 @@
       "when": 1782681950518,
       "tag": "0003_add-student-profiles-and-categorical-benefits",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782935292440,
+      "tag": "0004_refine-academic-structure",
+      "breakpoints": true
     }
   ]
 }
