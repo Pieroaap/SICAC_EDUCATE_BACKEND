@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authorize } from '../../../infrastructure/http/authorize.js';
 import {
   assignStudentGuardian,
+  assignPersonRole,
   createPersonWithoutAccess,
   getPersonDetail,
   importTeachers,
@@ -49,6 +50,10 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
       'TUTOR',
     ]),
     alumnoPerfil: studentProfileBody.optional(),
+    initialRegistration: z.object({
+      carreraId: z.string().uuid(),
+      periodoInicioId: z.string().uuid(),
+    }).optional(),
     tutor: personBody.omit({ estado: true }).extend({
       tipoRelacion: z.string().trim().min(1).max(50),
       fechaInicio: z.string().date().optional(),
@@ -156,6 +161,14 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
               tipoBeneficio: { type: 'string', enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'] },
             },
           },
+          initialRegistration: {
+            type: 'object',
+            required: ['carreraId', 'periodoInicioId'],
+            properties: {
+              carreraId: { type: 'string', format: 'uuid' },
+              periodoInicioId: { type: 'string', format: 'uuid' },
+            },
+          },
           tutor: {
             type: 'object',
             required: ['tipoDocumento', 'numeroDocumento', 'nombres', 'apellidoPaterno', 'tipoRelacion'],
@@ -169,7 +182,6 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
               telefono: { type: 'string', maxLength: 30 },
               fechaNacimiento: { type: 'string', format: 'date' },
               tipoRelacion: { type: 'string', maxLength: 50 },
-              fechaInicio: { type: 'string', format: 'date' },
             },
           },
         },
@@ -325,6 +337,47 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
     return importTeachers(app.db, body.rows, request.auth!.personaId, body.dryRun);
   });
 
+  app.post('/personas/:id/roles', {
+    preHandler: [app.authenticate, authorize('ADMINISTRADOR_SISTEMA')],
+    schema: {
+      tags: ['Usuarios'],
+      summary: 'Asignar o reactivar un rol a una persona',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object', required: ['role'],
+        properties: {
+          role: { type: 'string', enum: ['ALUMNO', 'PROFESOR', 'GESTOR_ACADEMICO', 'DIRECTOR_ACADEMICO', 'ADMINISTRADOR_SISTEMA'] },
+          student: {
+            type: 'object',
+            required: ['carreraId', 'periodoInicioId', 'estado', 'beneficio', 'tipoBeneficio'],
+            properties: {
+              carreraId: { type: 'string', format: 'uuid' },
+              periodoInicioId: { type: 'string', format: 'uuid' },
+              estado: { type: 'string', enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'] },
+              beneficio: { type: 'string', enum: ['becado', 'credito', 'becado_credito', 'normal'] },
+              tipoBeneficio: { type: 'string', enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'] },
+            },
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = z.object({
+      role: z.enum(['ALUMNO', 'PROFESOR', 'GESTOR_ACADEMICO', 'DIRECTOR_ACADEMICO', 'ADMINISTRADOR_SISTEMA']),
+      student: z.object({
+        carreraId: z.string().uuid(), periodoInicioId: z.string().uuid(),
+        estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']),
+        beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
+        tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
+      }).optional(),
+    }).parse(request.body);
+    return assignPersonRole(app.db, {
+      personId: params.id, ...body, actorId: request.auth!.personaId,
+    });
+  });
+
   app.post('/alumnos/:id/tutores', {
     preHandler: [app.authenticate, authorize('ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO')],
     schema: {
@@ -338,11 +391,10 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
       },
       body: {
         type: 'object',
-        required: ['guardianId', 'relationship', 'startDate'],
+        required: ['guardianId', 'relationship'],
         properties: {
           guardianId: { type: 'string', format: 'uuid' },
           relationship: { type: 'string', maxLength: 50 },
-          startDate: { type: 'string', format: 'date' },
           endDate: { type: 'string', format: 'date' },
         },
       },
@@ -351,7 +403,7 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z.object({
       guardianId: z.string().uuid(), relationship: z.string().min(1).max(50),
-      startDate: z.string().date(), endDate: z.string().date().optional(),
+      endDate: z.string().date().optional(),
     }).parse(request.body);
     return assignStudentGuardian(app.db, {
       studentId: params.id, ...body, actorId: request.auth!.personaId,

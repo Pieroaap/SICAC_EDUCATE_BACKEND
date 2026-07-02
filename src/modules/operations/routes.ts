@@ -201,7 +201,7 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
   });
 
   app.get('/autorizaciones-prerrequisito', {
-    ...managed,
+    preHandler: [app.authenticate, authorize('ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO')],
     schema: schema('Matrículas', 'Listar autorizaciones de prerrequisito', {
       querystring: {
         type: 'object',

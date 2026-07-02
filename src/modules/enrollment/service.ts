@@ -94,11 +94,20 @@ export async function createCareerEnrollment(db: Database, input: CareerEnrollme
 export async function createCareerRegistration(
   db: Database,
   input: {
-    personaId: string; carreraId: string; planCurricularId: string;
+    personaId: string; carreraId: string;
     periodoInicioId: string; actorId: string;
   },
 ) {
   return db.transaction(async (tx) => {
+    const [activePlan] = await tx.select({ id: planesCurriculares.id })
+      .from(planesCurriculares)
+      .where(and(
+        eq(planesCurriculares.carreraId, input.carreraId),
+        eq(planesCurriculares.estado, 'activo'),
+      ))
+      .orderBy(desc(planesCurriculares.createdAt), desc(planesCurriculares.version))
+      .limit(1);
+    if (!activePlan) throw badRequest('La carrera no tiene un plan curricular activo');
     const [context] = await tx.select({
       planId: planesCurriculares.id,
       selectedPeriodId: periodosAcademicos.id,
@@ -109,7 +118,7 @@ export async function createCareerRegistration(
       .innerJoin(perfilesAlumno, eq(perfilesAlumno.personaId, input.personaId))
       .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, input.periodoInicioId))
       .where(and(
-        eq(planesCurriculares.id, input.planCurricularId),
+        eq(planesCurriculares.id, activePlan.id),
         eq(planesCurriculares.carreraId, input.carreraId),
         eq(periodosAcademicos.carreraId, input.carreraId),
         eq(perfilesAlumno.estado, 'activo'),
@@ -139,13 +148,13 @@ export async function createCareerRegistration(
       .from(inscripcionesCarrera).where(and(
         eq(inscripcionesCarrera.personaId, input.personaId),
         eq(inscripcionesCarrera.carreraId, input.carreraId),
-        eq(inscripcionesCarrera.planCurricularId, input.planCurricularId),
+        eq(inscripcionesCarrera.planCurricularId, activePlan.id),
         eq(inscripcionesCarrera.estado, 'activo'),
       )).limit(1);
     if (existing) throw conflict('Ya existe una inscripción activa para esta carrera y plan');
     const [created] = await tx.insert(inscripcionesCarrera).values({
       personaId: input.personaId, carreraId: input.carreraId,
-      planCurricularId: input.planCurricularId, periodoInicioId: input.periodoInicioId,
+      planCurricularId: activePlan.id, periodoInicioId: input.periodoInicioId,
       createdBy: input.actorId,
     }).returning();
     return created;

@@ -98,3 +98,10 @@ La inscripción permanente y la matrícula periódica son recursos distintos:
 - `POST /antecedentes-academicos` reconoce manualmente un curso aprobado. Solo Dirección Académica; exige `fechaReferencial` o `periodoReferencial`.
 
 `fuente` admite `manual` y reserva `importacion` para el contrato futuro de Excel, pero no existe endpoint de importación en este corte. La matrícula individual existente también exige una inscripción activa y la fecha continúa asignándose en backend.
+# Onboarding y multirrol
+
+- Crear una persona `ALUMNO` exige `initialRegistration` con `carreraId` y `periodoInicioId`.
+- El backend resuelve el plan activo más reciente y deriva el periodo de ingreso.
+- `POST /personas/:id/roles` permite al Administrador agregar roles; `ALUMNO` exige datos de perfil e inscripción.
+- La asignación de tutor usa fecha automática del backend.
+- El listado de excepciones admite solo Administrador y Director; la resolución sigue exclusiva de Dirección.
