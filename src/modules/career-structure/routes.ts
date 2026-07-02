@@ -280,13 +280,13 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
         periodo: { type: 'string', enum: ['I', 'II', 'III'] },
         fechaInicio: { type: 'string', format: 'date' },
         fechaFin: { type: 'string', format: 'date' },
-        estado: { type: 'string', enum: ['activo', 'inactivo'] },
+        estado: { type: 'string', enum: ['activo', 'culminado'] },
       },
     }, idParams),
   }, async (r) => {
     const params = z.object({ id }).parse(r.params);
     const data = academicPeriodFields.partial().extend({
-      estado: z.enum(['activo', 'inactivo']).optional(),
+      estado: z.enum(['activo', 'culminado']).optional(),
     }).parse(r.body);
     return updateAcademicPeriod(app.db, params.id, {
       ...data,

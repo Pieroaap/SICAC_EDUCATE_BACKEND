@@ -64,6 +64,7 @@ export const cursoPrerrequisitos = pgTable('curso_prerrequisitos', {
 ]);
 
 export const academicPeriodEnum = pgEnum('academic_period_number', ['I', 'II', 'III']);
+export const academicPeriodStateEnum = pgEnum('estado_periodo_academico', ['activo', 'culminado']);
 
 export const periodosAcademicos = pgTable('periodos_academicos', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -73,7 +74,7 @@ export const periodosAcademicos = pgTable('periodos_academicos', {
   nombre: varchar('nombre', { length: 100 }).notNull(),
   fechaInicio: date('fecha_inicio').notNull(),
   fechaFin: date('fecha_fin').notNull(),
-  estado: activeStateEnum('estado').notNull().default('activo'),
+  estado: academicPeriodStateEnum('estado').notNull().default('activo'),
   ...auditColumns,
 }, (t) => [
   uniqueIndex('periodos_academicos_carrera_anio_periodo_uq').on(t.carreraId, t.anio, t.periodo),

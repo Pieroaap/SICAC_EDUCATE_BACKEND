@@ -43,6 +43,13 @@
       "when": 1782941203138,
       "tag": "0005_freezing_bulldozer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782960000000,
+      "tag": "0006_culminated_academic_periods",
+      "breakpoints": true
     }
   ]
 }

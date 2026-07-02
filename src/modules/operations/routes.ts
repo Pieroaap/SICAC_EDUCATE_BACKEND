@@ -13,11 +13,14 @@ import {
   listPrerequisiteAuthorizations,
   listScheduledCourses,
   listScheduledCourseStudents,
+  listScheduledCourseCandidates,
   listScheduledWorkshops,
   listWorkshopEnrollments,
   resolvePrerequisiteAuthorization,
   updateScheduledCourse,
+  withdrawCourseEnrollment,
 } from './service.js';
+import { enrollInScheduledCourse } from '../enrollment/service.js';
 
 const id = z.string().uuid();
 const managers = ['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO'];
@@ -103,6 +106,59 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
     ...readable,
     schema: schema('Matrículas', 'Listar alumnos de un curso programado', { params: paramsSchema }),
   }, (request) => listScheduledCourseStudents(app.db, z.object({ id }).parse(request.params).id));
+
+  app.get('/cursos-programados/:id/matriculados-periodo', {
+    ...managed,
+    schema: schema('Matrículas', 'Listar alumnos matriculados disponibles para un curso', { params: paramsSchema }),
+  }, (request) => listScheduledCourseCandidates(app.db, z.object({ id }).parse(request.params).id));
+
+  app.post('/cursos-programados/:id/alumnos', {
+    ...managed,
+    schema: schema('Matrículas', 'Inscribir varios alumnos en un curso', {
+      params: paramsSchema,
+      body: {
+        type: 'object', required: ['matriculaIds'],
+        properties: {
+          matriculaIds: { type: 'array', minItems: 1, items: { type: 'string', format: 'uuid' } },
+        },
+      },
+    }),
+  }, async (request) => {
+    const scheduledCourseId = z.object({ id }).parse(request.params).id;
+    const body = z.object({ matriculaIds: z.array(id).min(1) }).parse(request.body);
+    const date = new Date().toISOString().slice(0, 10);
+    const results = [];
+    for (const enrollmentId of body.matriculaIds) {
+      try {
+        const data = await enrollInScheduledCourse(
+          app.db, enrollmentId, scheduledCourseId, date, request.auth!.personaId,
+        );
+        results.push({ matriculaId: enrollmentId, success: true, data });
+      } catch (error) {
+        results.push({
+          matriculaId: enrollmentId,
+          success: false,
+          message: error instanceof Error ? error.message : 'No se pudo inscribir',
+        });
+      }
+    }
+    return { data: results };
+  });
+
+  app.patch('/matriculas-cursos/:id/estado', {
+    ...managed,
+    schema: schema('Matrículas', 'Retirar un alumno de un curso', {
+      params: paramsSchema,
+      body: {
+        type: 'object', required: ['estado'],
+        properties: { estado: { type: 'string', enum: ['retirado'] } },
+      },
+    }),
+  }, async (request) => {
+    const route = z.object({ id }).parse(request.params);
+    z.object({ estado: z.literal('retirado') }).parse(request.body);
+    return withdrawCourseEnrollment(app.db, { id: route.id, actorId: request.auth!.personaId });
+  });
 
   app.get('/matriculas', {
     ...managed,

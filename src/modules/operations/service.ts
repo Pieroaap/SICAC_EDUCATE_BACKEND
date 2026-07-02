@@ -202,6 +202,47 @@ export function listScheduledCourseStudents(db: Database, scheduledCourseId: str
     .where(eq(matriculaCursosProgramados.cursoProgramadoId, scheduledCourseId));
 }
 
+export async function listScheduledCourseCandidates(db: Database, scheduledCourseId: string) {
+  const [scheduled] = await db.select({
+    periodId: cursosProgramados.periodoAcademicoId,
+    planId: planCursos.planCurricularId,
+  }).from(cursosProgramados)
+    .innerJoin(planCursos, eq(planCursos.id, cursosProgramados.planCursoId))
+    .where(eq(cursosProgramados.id, scheduledCourseId)).limit(1);
+  if (!scheduled) throw notFound('Curso programado no encontrado');
+  const enrollments = await db.select({
+    matriculaId: matriculasCarrera.id,
+    personaId: personas.id,
+    dni: personas.numeroDocumento,
+    nombres: personas.nombres,
+    apellidoPaterno: personas.apellidoPaterno,
+    apellidoMaterno: personas.apellidoMaterno,
+  }).from(matriculasCarrera)
+    .innerJoin(personas, eq(personas.id, matriculasCarrera.personaId))
+    .where(and(
+      eq(matriculasCarrera.periodoAcademicoId, scheduled.periodId),
+      eq(matriculasCarrera.planCurricularId, scheduled.planId),
+      eq(matriculasCarrera.estado, 'activo'),
+    ));
+  const registered = await listScheduledCourseStudents(db, scheduledCourseId);
+  const byEnrollment = new Map(registered.map((row) => [row.inscripcion.matriculaCarreraId, row.inscripcion]));
+  return enrollments.map((row) => ({ ...row, inscripcion: byEnrollment.get(row.matriculaId) ?? null }));
+}
+
+export async function withdrawCourseEnrollment(
+  db: Database,
+  input: { id: string; actorId: string },
+) {
+  const [updated] = await db.update(matriculaCursosProgramados).set({
+    estado: 'retirado', updatedAt: new Date(), updatedBy: input.actorId,
+  }).where(and(
+    eq(matriculaCursosProgramados.id, input.id),
+    eq(matriculaCursosProgramados.estado, 'activo'),
+  )).returning();
+  if (!updated) throw badRequest('La inscripción no existe o ya no está activa');
+  return updated;
+}
+
 export async function createPrerequisiteAuthorization(
   db: Database,
   input: { matriculaCarreraId: string; cursoProgramadoId: string; motivo: string; actorId: string },

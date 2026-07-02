@@ -17,7 +17,7 @@ export async function registerEnrollmentRoutes(app: FastifyInstance): Promise<vo
       security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
-        required: ['personaId', 'carreraId', 'planCurricularId', 'periodoAcademicoId', 'fechaMatricula'],
+        required: ['personaId', 'carreraId', 'planCurricularId', 'periodoAcademicoId'],
         properties: {
           personaId: { type: 'string', format: 'uuid' },
           carreraId: { type: 'string', format: 'uuid' },
@@ -40,7 +40,7 @@ export async function registerEnrollmentRoutes(app: FastifyInstance): Promise<vo
   }, async (request) => {
     const body = z.object({
       personaId: id, carreraId: id, planCurricularId: id, periodoAcademicoId: id,
-      fechaMatricula: z.string().date(),
+      fechaMatricula: z.string().date().default(new Date().toISOString().slice(0, 10)),
       beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']).optional(),
       tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']).optional(),
       observacionBeneficio: z.string().optional(), costo: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),

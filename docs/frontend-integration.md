@@ -46,6 +46,13 @@ La autenticación utiliza el token Bearer retornado por el inicio de sesión con
   alumno, curso y periodo. Solo `DIRECTOR_ACADEMICO` puede resolverla mediante
   `PATCH /autorizaciones-prerrequisito/:id/resolucion`; aprobar no inscribe
   automáticamente al alumno.
+- Gestión por curso: `GET /cursos-programados/:id/matriculados-periodo` lista
+  candidatos matriculados del mismo periodo y plan; `POST
+  /cursos-programados/:id/alumnos` procesa inscripciones múltiples y devuelve un
+  resultado por matrícula. `PATCH /matriculas-cursos/:id/estado` retira una
+  inscripción activa sin eliminarla.
+- Periodos: al actualizar un periodo a `culminado`, backend inactiva sus cursos
+  programados y completa sus matrículas activas dentro de una transacción.
 - Evaluación: configurar componentes, registrar y consultar calificaciones.
 - Asistencia: registrar y consultar asistencias con alertas y retiro automático.
 - Egreso: consultar elegibilidad, aprobar y listar egresados.

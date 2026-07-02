@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
 import {
-  carreras, cursoPrerrequisitos, cursos, periodosAcademicos, planCursos, planesCurriculares,
+  carreras, cursoPrerrequisitos, cursos, cursosProgramados, matriculasCarrera,
+  periodosAcademicos, planCursos, planesCurriculares,
 } from '../../db/schema/index.js';
 import { badRequest, notFound } from '../../shared/errors.js';
 
@@ -169,7 +170,7 @@ export async function listAcademicPeriods(
   if (filters.anio) conditions.push(eq(periodosAcademicos.anio, filters.anio));
   return db.select().from(periodosAcademicos)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(periodosAcademicos.anio), periodosAcademicos.periodo);
+    .orderBy(desc(periodosAcademicos.anio), desc(periodosAcademicos.periodo));
 }
 
 export async function createAcademicPeriod(
@@ -195,7 +196,7 @@ export async function updateAcademicPeriod(
     periodo?: 'I' | 'II' | 'III' | undefined;
     fechaInicio?: string | undefined;
     fechaFin?: string | undefined;
-    estado?: 'activo' | 'inactivo' | undefined;
+    estado?: 'activo' | 'culminado' | undefined;
     updatedBy: string;
   },
 ) {
@@ -215,10 +216,24 @@ export async function updateAcademicPeriod(
   const [career] = await db.select({ nombre: carreras.nombre }).from(carreras)
     .where(eq(carreras.id, next.carreraId)).limit(1);
   if (!career) throw notFound('Carrera no encontrada');
+  if (data.estado === 'culminado') {
+    return db.transaction(async (tx) => {
+      const [updated] = await tx.update(periodosAcademicos).set({
+        ...data, nombre: `${career.nombre} ${next.anio}-${next.periodo}`, updatedAt: new Date(),
+      }).where(eq(periodosAcademicos.id, id)).returning();
+      await Promise.all([
+        tx.update(cursosProgramados).set({
+          estado: 'inactivo', updatedAt: new Date(), updatedBy: data.updatedBy,
+        }).where(and(eq(cursosProgramados.periodoAcademicoId, id), eq(cursosProgramados.estado, 'activo'))),
+        tx.update(matriculasCarrera).set({
+          estado: 'completado', updatedAt: new Date(), updatedBy: data.updatedBy,
+        }).where(and(eq(matriculasCarrera.periodoAcademicoId, id), eq(matriculasCarrera.estado, 'activo'))),
+      ]);
+      return [updated];
+    });
+  }
   return db.update(periodosAcademicos).set({
-    ...data,
-    nombre: `${career.nombre} ${next.anio}-${next.periodo}`,
-    updatedAt: new Date(),
+    ...data, nombre: `${career.nombre} ${next.anio}-${next.periodo}`, updatedAt: new Date(),
   }).where(eq(periodosAcademicos.id, id)).returning();
 }
 
