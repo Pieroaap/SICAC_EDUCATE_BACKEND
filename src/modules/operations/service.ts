@@ -21,7 +21,7 @@ import {
   talleres,
   talleresProgramados,
 } from '../../db/schema/index.js';
-import { badRequest, notFound } from '../../shared/errors.js';
+import { badRequest, conflict, notFound } from '../../shared/errors.js';
 
 type ScheduledCourseInput = {
   planCursoId: string;
@@ -70,6 +70,41 @@ export async function createScheduledCourse(db: Database, input: ScheduledCourse
     createdBy: input.actorId,
   }).returning();
   return created;
+}
+
+export async function updateScheduledCourse(
+  db: Database,
+  input: {
+    id: string;
+    profesorPersonaId?: string | undefined;
+    seccion?: string | undefined;
+    estado?: 'activo' | 'inactivo' | undefined;
+    actorId: string;
+  },
+) {
+  const [current] = await db.select().from(cursosProgramados)
+    .where(eq(cursosProgramados.id, input.id)).limit(1);
+  if (!current) throw notFound('Curso programado no encontrado');
+  if (input.profesorPersonaId) {
+    const [professor] = await db.select({ id: personas.id }).from(personas)
+      .innerJoin(personasRoles, eq(personasRoles.personaId, personas.id))
+      .innerJoin(roles, eq(roles.id, personasRoles.rolId))
+      .where(and(
+        eq(personas.id, input.profesorPersonaId),
+        eq(personas.estado, 'activo'),
+        eq(personasRoles.estado, 'activo'),
+        eq(roles.codigo, 'PROFESOR'),
+      )).limit(1);
+    if (!professor) throw badRequest('La persona indicada no tiene el rol PROFESOR activo');
+  }
+  const [updated] = await db.update(cursosProgramados).set({
+    profesorPersonaId: input.profesorPersonaId,
+    seccion: input.seccion,
+    estado: input.estado,
+    updatedAt: new Date(),
+    updatedBy: input.actorId,
+  }).where(eq(cursosProgramados.id, input.id)).returning();
+  return updated;
 }
 
 export async function listScheduledCourses(
@@ -171,10 +206,29 @@ export async function createPrerequisiteAuthorization(
   db: Database,
   input: { matriculaCarreraId: string; cursoProgramadoId: string; motivo: string; actorId: string },
 ) {
-  const [enrollment] = await db.select({ id: matriculasCarrera.id }).from(matriculasCarrera)
+  const [enrollment] = await db.select({
+    id: matriculasCarrera.id,
+    planId: matriculasCarrera.planCurricularId,
+    periodId: matriculasCarrera.periodoAcademicoId,
+    scheduledPlanId: planCursos.planCurricularId,
+    scheduledPeriodId: cursosProgramados.periodoAcademicoId,
+  }).from(matriculasCarrera)
+    .innerJoin(cursosProgramados, eq(cursosProgramados.id, input.cursoProgramadoId))
+    .innerJoin(planCursos, eq(planCursos.id, cursosProgramados.planCursoId))
     .where(and(eq(matriculasCarrera.id, input.matriculaCarreraId), eq(matriculasCarrera.estado, 'activo')))
     .limit(1);
   if (!enrollment) throw notFound('Matrícula activa no encontrada');
+  if (enrollment.planId !== enrollment.scheduledPlanId || enrollment.periodId !== enrollment.scheduledPeriodId) {
+    throw badRequest('El curso programado no pertenece al plan y periodo de la matrícula');
+  }
+  const [pending] = await db.select({ id: autorizacionesPrerrequisito.id })
+    .from(autorizacionesPrerrequisito)
+    .where(and(
+      eq(autorizacionesPrerrequisito.matriculaCarreraId, input.matriculaCarreraId),
+      eq(autorizacionesPrerrequisito.cursoProgramadoId, input.cursoProgramadoId),
+      eq(autorizacionesPrerrequisito.estado, 'pendiente'),
+    )).limit(1);
+  if (pending) throw conflict('Ya existe una solicitud pendiente para este curso');
   const [created] = await db.insert(autorizacionesPrerrequisito).values({
     matriculaCarreraId: input.matriculaCarreraId,
     cursoProgramadoId: input.cursoProgramadoId,
@@ -194,7 +248,29 @@ export function listPrerequisiteAuthorizations(
   const conditions: SQL[] = [];
   if (filters.estado) conditions.push(eq(autorizacionesPrerrequisito.estado, filters.estado));
   if (filters.matriculaId) conditions.push(eq(autorizacionesPrerrequisito.matriculaCarreraId, filters.matriculaId));
-  return db.select().from(autorizacionesPrerrequisito)
+  return db.select({
+    id: autorizacionesPrerrequisito.id,
+    matriculaCarreraId: autorizacionesPrerrequisito.matriculaCarreraId,
+    cursoProgramadoId: autorizacionesPrerrequisito.cursoProgramadoId,
+    motivo: autorizacionesPrerrequisito.motivo,
+    estado: autorizacionesPrerrequisito.estado,
+    fechaAprobacion: autorizacionesPrerrequisito.fechaAprobacion,
+    createdAt: autorizacionesPrerrequisito.createdAt,
+    alumnoDocumento: personas.numeroDocumento,
+    alumnoNombres: personas.nombres,
+    alumnoApellidoPaterno: personas.apellidoPaterno,
+    alumnoApellidoMaterno: personas.apellidoMaterno,
+    cursoCodigo: cursos.codigo,
+    cursoNombre: cursos.nombre,
+    seccion: cursosProgramados.seccion,
+    periodoNombre: periodosAcademicos.nombre,
+  }).from(autorizacionesPrerrequisito)
+    .innerJoin(matriculasCarrera, eq(matriculasCarrera.id, autorizacionesPrerrequisito.matriculaCarreraId))
+    .innerJoin(personas, eq(personas.id, matriculasCarrera.personaId))
+    .innerJoin(cursosProgramados, eq(cursosProgramados.id, autorizacionesPrerrequisito.cursoProgramadoId))
+    .innerJoin(planCursos, eq(planCursos.id, cursosProgramados.planCursoId))
+    .innerJoin(cursos, eq(cursos.id, planCursos.cursoId))
+    .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(autorizacionesPrerrequisito.createdAt));
 }

@@ -1,7 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { cursosProgramados } from '../../db/schema/index.js';
 import { authorize } from '../../infrastructure/http/authorize.js';
 import {
   createPrerequisiteAuthorization,
@@ -18,6 +16,7 @@ import {
   listScheduledWorkshops,
   listWorkshopEnrollments,
   resolvePrerequisiteAuthorization,
+  updateScheduledCourse,
 } from './service.js';
 
 const id = z.string().uuid();
@@ -93,9 +92,11 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
       profesorPersonaId: id.optional(), seccion: z.string().trim().min(1).max(30).optional(),
       estado: z.enum(['activo', 'inactivo']).optional(),
     }).parse(request.body);
-    return app.db.update(cursosProgramados).set({
-      ...body, updatedAt: new Date(), updatedBy: request.auth!.personaId,
-    }).where(eq(cursosProgramados.id, route.id)).returning();
+    return updateScheduledCourse(app.db, {
+      id: route.id,
+      ...body,
+      actorId: request.auth!.personaId,
+    });
   });
 
   app.get('/cursos-programados/:id/alumnos', {

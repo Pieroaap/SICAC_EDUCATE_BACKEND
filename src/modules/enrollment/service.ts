@@ -56,7 +56,11 @@ export async function createCareerEnrollment(db: Database, input: CareerEnrollme
     const [studentProfile] = await tx.select({
       beneficio: perfilesAlumno.beneficio,
       tipoBeneficio: perfilesAlumno.tipoBeneficio,
+      estado: perfilesAlumno.estado,
     }).from(perfilesAlumno).where(eq(perfilesAlumno.personaId, input.personaId)).limit(1);
+    if (!studentProfile || studentProfile.estado !== 'activo') {
+      throw badRequest('La persona indicada no tiene un perfil de alumno activo');
+    }
     const [created] = await tx.insert(matriculasCarrera).values({
       personaId: input.personaId, carreraId: input.carreraId, planCurricularId: input.planCurricularId,
       periodoAcademicoId: input.periodoAcademicoId, fechaMatricula: input.fechaMatricula,
@@ -76,7 +80,16 @@ export async function enrollInScheduledCourse(db: Database, enrollmentId: string
       .innerJoin(planCursos, eq(planCursos.id, cursosProgramados.planCursoId))
       .where(eq(matriculasCarrera.id, enrollmentId)).limit(1);
     if (!context || context.enrollment.estado !== 'activo') throw notFound('Matrícula activa no encontrada');
+    if (context.scheduled.estado !== 'activo') throw badRequest('El curso programado no está activo');
     if (context.planCourse.planCurricularId !== context.enrollment.planCurricularId) throw badRequest('El curso no pertenece al plan de la matrícula');
+    if (context.scheduled.periodoAcademicoId !== context.enrollment.periodoAcademicoId) throw badRequest('El curso no pertenece al periodo de la matrícula');
+    const [existing] = await tx.select({ id: matriculaCursosProgramados.id })
+      .from(matriculaCursosProgramados)
+      .where(and(
+        eq(matriculaCursosProgramados.matriculaCarreraId, enrollmentId),
+        eq(matriculaCursosProgramados.cursoProgramadoId, scheduledCourseId),
+      )).limit(1);
+    if (existing) throw conflict('El alumno ya está inscrito en este curso');
     const prerequisites = await tx.select().from(cursoPrerrequisitos).where(eq(cursoPrerrequisitos.planCursoId, context.planCourse.id));
     if (prerequisites.length > 0) {
       const prerequisiteIds = prerequisites.map((p) => p.cursoPrerrequisitoId);
@@ -87,10 +100,15 @@ export async function enrollInScheduledCourse(db: Database, enrollmentId: string
         componentWeight: componentesEvaluacion.porcentaje,
       })
         .from(matriculaCursosProgramados)
+        .innerJoin(matriculasCarrera, eq(matriculasCarrera.id, matriculaCursosProgramados.matriculaCarreraId))
         .innerJoin(cursosProgramados, eq(cursosProgramados.id, matriculaCursosProgramados.cursoProgramadoId))
         .innerJoin(calificaciones, eq(calificaciones.matriculaCursoProgramadoId, matriculaCursosProgramados.id))
         .innerJoin(componentesEvaluacion, eq(componentesEvaluacion.id, calificaciones.componenteEvaluacionId))
-        .where(and(eq(matriculaCursosProgramados.matriculaCarreraId, enrollmentId), inArray(cursosProgramados.planCursoId, prerequisiteIds)));
+        .where(and(
+          eq(matriculasCarrera.personaId, context.enrollment.personaId),
+          eq(matriculasCarrera.planCurricularId, context.enrollment.planCurricularId),
+          inArray(cursosProgramados.planCursoId, prerequisiteIds),
+        ));
       const approved = new Set<string>();
       for (const prerequisiteId of prerequisiteIds) {
         const rows = grades.filter((g) => g.prerequisiteId === prerequisiteId);

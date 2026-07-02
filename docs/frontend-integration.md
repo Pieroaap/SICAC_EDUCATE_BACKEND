@@ -30,9 +30,21 @@ La autenticación utiliza el token Bearer retornado por el inicio de sesión con
   `POST /personas/:personaId/acceso` habilita acceso para una persona existente,
   `POST /usuarios/:personaId/reiniciar-clave` reinicia una clave temporal y
   `POST /alumnos/:id/tutores` asigna tutores respetando el máximo de dos activos.
-- Programación: crear, listar y actualizar cursos programados.
-- Matrículas: crear matrículas, inscribir cursos y consultar el historial.
-- Prerrequisitos: solicitar excepciones y resolverlas como Dirección Académica.
+- Programación: `GET/POST /cursos-programados` y
+  `PATCH /cursos-programados/:id` administran la oferta por plan, carrera,
+  periodo, sección y profesor activo.
+- Matrículas: `POST /matriculas/carrera` crea una matrícula independiente por
+  periodo. No modifica el ciclo de ingreso ni el estado operativo del alumno.
+  `GET /matriculas` consulta su historial y `GET /matriculas/:id/cursos`
+  devuelve los cursos inscritos.
+- Inscripción: `POST /matriculas/cursos` exige que el curso programado pertenezca
+  al plan y periodo de la matrícula. Los prerrequisitos se evalúan contra todos
+  los intentos históricos del alumno en el mismo plan.
+- Prerrequisitos: `POST /autorizaciones-prerrequisito` crea una solicitud sin
+  duplicar pendientes. `GET /autorizaciones-prerrequisito` devuelve contexto de
+  alumno, curso y periodo. Solo `DIRECTOR_ACADEMICO` puede resolverla mediante
+  `PATCH /autorizaciones-prerrequisito/:id/resolucion`; aprobar no inscribe
+  automáticamente al alumno.
 - Evaluación: configurar componentes, registrar y consultar calificaciones.
 - Asistencia: registrar y consultar asistencias con alertas y retiro automático.
 - Egreso: consultar elegibilidad, aprobar y listar egresados.
