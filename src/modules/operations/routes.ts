@@ -56,7 +56,7 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
     schema: schema('Estructura académica', 'Programar un curso', {
       body: {
         type: 'object',
-        required: ['planCursoId', 'periodoAcademicoId', 'profesorPersonaId', 'seccion'],
+        required: ['planCursoId', 'periodoAcademicoId', 'profesorPersonaId'],
         properties: {
           planCursoId: { type: 'string', format: 'uuid' },
           periodoAcademicoId: { type: 'string', format: 'uuid' },
@@ -68,7 +68,7 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
   }, async (request) => {
     const body = z.object({
       planCursoId: id, periodoAcademicoId: id, profesorPersonaId: id,
-      seccion: z.string().trim().min(1).max(30),
+      seccion: z.string().trim().min(1).max(30).default('ÚNICA'),
     }).parse(request.body);
     return createScheduledCourse(app.db, { ...body, actorId: request.auth!.personaId });
   });

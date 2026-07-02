@@ -32,7 +32,8 @@ La autenticación utiliza el token Bearer retornado por el inicio de sesión con
   `POST /alumnos/:id/tutores` asigna tutores respetando el máximo de dos activos.
 - Programación: `GET/POST /cursos-programados` y
   `PATCH /cursos-programados/:id` administran la oferta por plan, carrera,
-  periodo, sección y profesor activo.
+  periodo y profesor activo. Mientras no se gestionen secciones, `POST` admite
+  omitir `seccion` y registra internamente `ÚNICA`.
 - Matrículas: `POST /matriculas/carrera` crea una matrícula independiente por
   periodo. No modifica el ciclo de ingreso ni el estado operativo del alumno.
   `GET /matriculas` consulta su historial y `GET /matriculas/:id/cursos`
