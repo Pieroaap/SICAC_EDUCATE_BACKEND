@@ -36,6 +36,13 @@
       "when": 1782935292440,
       "tag": "0004_refine-academic-structure",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782941203138,
+      "tag": "0005_freezing_bulldozer",
+      "breakpoints": true
     }
   ]
 }

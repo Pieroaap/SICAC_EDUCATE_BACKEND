@@ -32,8 +32,14 @@ type ScheduledCourseInput = {
 };
 
 export async function createScheduledCourse(db: Database, input: ScheduledCourseInput) {
-  const [context] = await db.select({ planCourseId: planCursos.id, periodId: periodosAcademicos.id })
+  const [context] = await db.select({
+    planCourseId: planCursos.id,
+    planCareerId: planesCurriculares.carreraId,
+    periodId: periodosAcademicos.id,
+    periodCareerId: periodosAcademicos.carreraId,
+  })
     .from(planCursos)
+    .innerJoin(planesCurriculares, eq(planesCurriculares.id, planCursos.planCurricularId))
     .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, input.periodoAcademicoId))
     .where(and(
       eq(planCursos.id, input.planCursoId),
@@ -41,6 +47,9 @@ export async function createScheduledCourse(db: Database, input: ScheduledCourse
       eq(periodosAcademicos.estado, 'activo'),
     )).limit(1);
   if (!context) throw notFound('Curso del plan o periodo académico activo no encontrado');
+  if (context.planCareerId !== context.periodCareerId) {
+    throw badRequest('El curso del plan y el periodo deben pertenecer a la misma carrera');
+  }
 
   const [professor] = await db.select({ id: personas.id }).from(personas)
     .innerJoin(personasRoles, eq(personasRoles.personaId, personas.id))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidPrerequisites } from './service.js';
+import { assertValidPrerequisites, buildPlanCode } from './service.js';
 
 const target = { id: 'target', planCurricularId: 'plan-a', ciclo: 3 };
 
@@ -27,5 +27,15 @@ describe('assertValidPrerequisites', () => {
     expect(() => assertValidPrerequisites(target, ['a'], [
       { id: 'a', planId: 'plan-a', ciclo: 3 },
     ])).toThrow(/ciclos anteriores/);
+  });
+});
+
+describe('buildPlanCode', () => {
+  it('genera un codigo estable con carrera y version', () => {
+    expect(buildPlanCode('act', '2026')).toBe('ACT-2026');
+  });
+
+  it('respeta el limite del catalogo', () => {
+    expect(buildPlanCode('carrera-muy-extensa', 'version-muy-extensa')).toHaveLength(30);
   });
 });

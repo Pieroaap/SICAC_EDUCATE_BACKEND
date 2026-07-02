@@ -1,13 +1,49 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
-import { cursoPrerrequisitos, cursos, carreras, planCursos, planesCurriculares } from '../../db/schema/index.js';
+import {
+  carreras, cursoPrerrequisitos, cursos, periodosAcademicos, planCursos, planesCurriculares,
+} from '../../db/schema/index.js';
 import { badRequest, notFound } from '../../shared/errors.js';
 
-export function createCareer(db: Database, data: typeof carreras.$inferInsert) {
-  return db.insert(carreras).values(data).returning().then(([row]) => row);
+export function buildPlanCode(careerCode: string, version: string) {
+  return `${careerCode.trim().toUpperCase()}-${version.trim().toUpperCase()}`.slice(0, 30);
 }
-export function createPlan(db: Database, data: typeof planesCurriculares.$inferInsert) {
-  return db.insert(planesCurriculares).values(data).returning().then(([row]) => row);
+
+export async function createCareerWithPlan(
+  db: Database,
+  input: Pick<typeof carreras.$inferInsert, 'codigo' | 'nombre' | 'descripcion' | 'createdBy'> & {
+    planVersion: string;
+  },
+) {
+  return db.transaction(async (tx) => {
+    const { planVersion, ...careerData } = input;
+    const [career] = await tx.insert(carreras).values(careerData).returning();
+    if (!career) throw badRequest('No se pudo crear la carrera');
+    const [plan] = await tx.insert(planesCurriculares).values({
+      carreraId: career.id,
+      codigo: buildPlanCode(career.codigo, planVersion),
+      nombre: `${career.nombre} ${planVersion}`,
+      version: planVersion,
+      createdBy: input.createdBy,
+    }).returning();
+    if (!plan) throw badRequest('No se pudo crear el plan inicial');
+    return { career, plan };
+  });
+}
+export async function createPlanVersion(
+  db: Database,
+  input: { carreraId: string; version: string; createdBy: string },
+) {
+  const [career] = await db.select().from(carreras).where(eq(carreras.id, input.carreraId)).limit(1);
+  if (!career) throw notFound('Carrera no encontrada');
+  const [plan] = await db.insert(planesCurriculares).values({
+    carreraId: career.id,
+    codigo: buildPlanCode(career.codigo, input.version),
+    nombre: `${career.nombre} ${input.version}`,
+    version: input.version,
+    createdBy: input.createdBy,
+  }).returning();
+  return plan;
 }
 export function createCourse(db: Database, data: typeof cursos.$inferInsert) {
   return db.insert(cursos).values(data).returning().then(([row]) => row);
@@ -109,8 +145,10 @@ export async function updatePlanCourse(
   });
 }
 
-export async function listPlanCourses(db: Database) {
-  const rows = await db.select().from(planCursos).orderBy(asc(planCursos.ciclo), asc(planCursos.orden));
+export async function listPlanCourses(db: Database, planCurricularId?: string) {
+  const rows = await db.select().from(planCursos)
+    .where(planCurricularId ? eq(planCursos.planCurricularId, planCurricularId) : undefined)
+    .orderBy(asc(planCursos.ciclo), asc(planCursos.orden));
   const ids = rows.map((row) => row.id);
   const prerequisites = ids.length === 0 ? [] : await db.select().from(cursoPrerrequisitos)
     .where(inArray(cursoPrerrequisitos.planCursoId, ids));
@@ -120,6 +158,68 @@ export async function listPlanCourses(db: Database) {
       .filter((item) => item.planCursoId === row.id)
       .map((item) => item.cursoPrerrequisitoId),
   }));
+}
+
+export async function listAcademicPeriods(
+  db: Database,
+  filters: { carreraId?: string | undefined; anio?: number | undefined },
+) {
+  const conditions: SQL[] = [];
+  if (filters.carreraId) conditions.push(eq(periodosAcademicos.carreraId, filters.carreraId));
+  if (filters.anio) conditions.push(eq(periodosAcademicos.anio, filters.anio));
+  return db.select().from(periodosAcademicos)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(periodosAcademicos.anio), periodosAcademicos.periodo);
+}
+
+export async function createAcademicPeriod(
+  db: Database,
+  input: Omit<typeof periodosAcademicos.$inferInsert, 'nombre'>,
+) {
+  const [career] = await db.select({ nombre: carreras.nombre }).from(carreras)
+    .where(eq(carreras.id, input.carreraId)).limit(1);
+  if (!career) throw notFound('Carrera no encontrada');
+  const [created] = await db.insert(periodosAcademicos).values({
+    ...input,
+    nombre: `${career.nombre} ${input.anio}-${input.periodo}`,
+  }).returning();
+  return created;
+}
+
+export async function updateAcademicPeriod(
+  db: Database,
+  id: string,
+  data: {
+    carreraId?: string | undefined;
+    anio?: number | undefined;
+    periodo?: 'I' | 'II' | 'III' | undefined;
+    fechaInicio?: string | undefined;
+    fechaFin?: string | undefined;
+    estado?: 'activo' | 'inactivo' | undefined;
+    updatedBy: string;
+  },
+) {
+  const [current] = await db.select().from(periodosAcademicos)
+    .where(eq(periodosAcademicos.id, id)).limit(1);
+  if (!current) throw notFound('Periodo académico no encontrado');
+  const next = {
+    carreraId: data.carreraId ?? current.carreraId,
+    anio: data.anio ?? current.anio,
+    periodo: data.periodo ?? current.periodo,
+    fechaInicio: data.fechaInicio ?? current.fechaInicio,
+    fechaFin: data.fechaFin ?? current.fechaFin,
+  };
+  if (next.fechaFin < next.fechaInicio) {
+    throw badRequest('La fecha de fin debe ser igual o posterior a la fecha de inicio');
+  }
+  const [career] = await db.select({ nombre: carreras.nombre }).from(carreras)
+    .where(eq(carreras.id, next.carreraId)).limit(1);
+  if (!career) throw notFound('Carrera no encontrada');
+  return db.update(periodosAcademicos).set({
+    ...data,
+    nombre: `${career.nombre} ${next.anio}-${next.periodo}`,
+    updatedAt: new Date(),
+  }).where(eq(periodosAcademicos.id, id)).returning();
 }
 
 export async function getCareerPlan(db: Database, careerId: string) {

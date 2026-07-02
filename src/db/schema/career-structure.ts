@@ -67,6 +67,7 @@ export const academicPeriodEnum = pgEnum('academic_period_number', ['I', 'II', '
 
 export const periodosAcademicos = pgTable('periodos_academicos', {
   id: uuid('id').primaryKey().defaultRandom(),
+  carreraId: uuid('carrera_id').notNull().references(() => carreras.id, { onDelete: 'restrict' }),
   anio: integer('anio').notNull(),
   periodo: academicPeriodEnum('periodo').notNull(),
   nombre: varchar('nombre', { length: 100 }).notNull(),
@@ -75,7 +76,8 @@ export const periodosAcademicos = pgTable('periodos_academicos', {
   estado: activeStateEnum('estado').notNull().default('activo'),
   ...auditColumns,
 }, (t) => [
-  uniqueIndex('periodos_academicos_anio_periodo_uq').on(t.anio, t.periodo),
+  uniqueIndex('periodos_academicos_carrera_anio_periodo_uq').on(t.carreraId, t.anio, t.periodo),
+  index('periodos_academicos_carrera_idx').on(t.carreraId),
   check('periodos_academicos_anio_ck', sql`${t.anio} between 1900 and 9999`),
   check('periodos_academicos_fechas_ck', sql`${t.fechaFin} >= ${t.fechaInicio}`),
 ]);

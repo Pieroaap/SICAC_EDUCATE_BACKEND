@@ -14,7 +14,7 @@ La autenticación utiliza el token Bearer retornado por el inicio de sesión con
 
 ## Flujos operativos
 
-- Catálogos: carreras, planes curriculares, cursos obligatorios/electivos, cursos del plan con hasta dos prerrequisitos y periodos por año/número.
+- Catálogos: carreras con plan inicial, versiones de planes, cursos obligatorios/electivos, malla del plan con hasta dos prerrequisitos y periodos independientes por carrera.
 - Identidad: `GET /personas`, `GET /alumnos` y `GET /profesores` ofrecen
   búsqueda, filtro por estado y paginación con la forma `{ data, pagination }`.
   `GET /personas/:id` devuelve roles, acceso, perfil de alumno cuando exista y

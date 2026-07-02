@@ -1,10 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { carreras, cursos, periodosAcademicos, planesCurriculares } from '../../db/schema/index.js';
+import { carreras, cursos, planesCurriculares } from '../../db/schema/index.js';
 import { authorize } from '../../infrastructure/http/authorize.js';
 import {
-  addCourseToPlan, createCareer, createCourse, createPlan, getCareerPlan, listPlanCourses, updatePlanCourse,
+  addCourseToPlan,
+  createAcademicPeriod,
+  createCareerWithPlan,
+  createCourse,
+  createPlanVersion,
+  getCareerPlan,
+  listAcademicPeriods,
+  listPlanCourses,
+  updateAcademicPeriod,
+  updatePlanCourse,
 } from './service.js';
 
 const managers = ['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO'];
@@ -23,6 +32,7 @@ const planCourse = z.object({
   prerequisiteIds: z.array(id).max(2).default([]),
 });
 const academicPeriodFields = z.object({
+  carreraId: id,
   anio: z.number().int().min(1900).max(9999),
   periodo: z.enum(['I', 'II', 'III']),
   fechaInicio: z.string().date(),
@@ -63,8 +73,18 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
   }, () => app.db.select().from(carreras));
   app.post('/carreras', {
     ...guarded,
-    schema: docs('Crear una carrera', catalogBody),
-  }, async (r) => createCareer(app.db, { ...catalog.parse(r.body), createdBy: r.auth!.personaId }));
+    schema: docs('Crear una carrera con su plan inicial', {
+      ...catalogBody,
+      required: ['codigo', 'nombre', 'planVersion'],
+      properties: {
+        ...catalogBody.properties,
+        planVersion: { type: 'string', maxLength: 30 },
+      },
+    }),
+  }, async (r) => {
+    const body = catalog.extend({ planVersion: z.string().trim().min(1).max(30) }).parse(r.body);
+    return createCareerWithPlan(app.db, { ...body, createdBy: r.auth!.personaId });
+  });
   app.patch('/carreras/:id', {
     ...guarded,
     schema: docs('Actualizar una carrera', { ...catalogBody, required: [] }, idParams),
@@ -81,22 +101,30 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
     ...guarded,
     schema: docs('Crear un plan curricular', {
       type: 'object',
-      required: ['carreraId', 'codigo', 'nombre', 'version'],
+      required: ['carreraId', 'version'],
       properties: {
         carreraId: { type: 'string', format: 'uuid' },
-        codigo: { type: 'string' },
-        nombre: { type: 'string' },
         version: { type: 'string' },
       },
     }),
   }, async (r) => {
-    const body = z.object({ carreraId: id, codigo: z.string(), nombre: z.string(), version: z.string() }).parse(r.body);
-    return createPlan(app.db, { ...body, createdBy: r.auth!.personaId });
+    const body = z.object({ carreraId: id, version: z.string().trim().min(1).max(30) }).parse(r.body);
+    return createPlanVersion(app.db, { ...body, createdBy: r.auth!.personaId });
   });
   app.get('/planes-curriculares', {
     preHandler: [app.authenticate],
-    schema: docs('Listar planes curriculares'),
-  }, () => app.db.select().from(planesCurriculares));
+    schema: {
+      ...docs('Listar planes curriculares'),
+      querystring: {
+        type: 'object',
+        properties: { carreraId: { type: 'string', format: 'uuid' } },
+      },
+    },
+  }, (r) => {
+    const query = z.object({ carreraId: id.optional() }).parse(r.query);
+    return app.db.select().from(planesCurriculares)
+      .where(query.carreraId ? eq(planesCurriculares.carreraId, query.carreraId) : undefined);
+  });
   app.patch('/planes-curriculares/:id', {
     ...guarded,
     schema: docs('Actualizar un plan curricular', {
@@ -171,8 +199,17 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
   });
   app.get('/plan-cursos', {
     preHandler: [app.authenticate],
-    schema: docs('Listar cursos asignados a planes'),
-  }, () => listPlanCourses(app.db));
+    schema: {
+      ...docs('Listar cursos asignados a planes'),
+      querystring: {
+        type: 'object',
+        properties: { planCurricularId: { type: 'string', format: 'uuid' } },
+      },
+    },
+  }, (r) => {
+    const query = z.object({ planCurricularId: id.optional() }).parse(r.query);
+    return listPlanCourses(app.db, query.planCurricularId);
+  });
   app.patch('/plan-cursos/:id', {
     ...guarded,
     schema: docs('Actualizar un curso del plan', {
@@ -196,14 +233,30 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
   });
   app.get('/periodos-academicos', {
     preHandler: [app.authenticate],
-    schema: docs('Listar periodos académicos'),
-  }, () => app.db.select().from(periodosAcademicos));
+    schema: {
+      ...docs('Listar periodos académicos'),
+      querystring: {
+        type: 'object',
+        properties: {
+          carreraId: { type: 'string', format: 'uuid' },
+          anio: { type: 'integer', minimum: 1900, maximum: 9999 },
+        },
+      },
+    },
+  }, (r) => {
+    const query = z.object({
+      carreraId: id.optional(),
+      anio: z.coerce.number().int().min(1900).max(9999).optional(),
+    }).parse(r.query);
+    return listAcademicPeriods(app.db, query);
+  });
   app.post('/periodos-academicos', {
     ...guarded,
     schema: docs('Crear un periodo académico', {
       type: 'object',
-      required: ['anio', 'periodo', 'fechaInicio', 'fechaFin'],
+      required: ['carreraId', 'anio', 'periodo', 'fechaInicio', 'fechaFin'],
       properties: {
+        carreraId: { type: 'string', format: 'uuid' },
         anio: { type: 'integer', minimum: 1900, maximum: 9999 },
         periodo: { type: 'string', enum: ['I', 'II', 'III'] },
         fechaInicio: { type: 'string', format: 'date' },
@@ -212,17 +265,17 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
     }),
   }, async (r) => {
     const body = academicPeriod.parse(r.body);
-    return app.db.insert(periodosAcademicos).values({
+    return createAcademicPeriod(app.db, {
       ...body,
-      nombre: `${body.anio} - ${body.periodo}`,
       createdBy: r.auth!.personaId,
-    }).returning();
+    });
   });
   app.patch('/periodos-academicos/:id', {
     ...guarded,
     schema: docs('Actualizar un periodo académico', {
       type: 'object',
       properties: {
+        carreraId: { type: 'string', format: 'uuid' },
         anio: { type: 'integer', minimum: 1900, maximum: 9999 },
         periodo: { type: 'string', enum: ['I', 'II', 'III'] },
         fechaInicio: { type: 'string', format: 'date' },
@@ -235,16 +288,9 @@ export async function registerCareerStructureRoutes(app: FastifyInstance): Promi
     const data = academicPeriodFields.partial().extend({
       estado: z.enum(['activo', 'inactivo']).optional(),
     }).parse(r.body);
-    const [current] = await app.db.select().from(periodosAcademicos)
-      .where(eq(periodosAcademicos.id, params.id)).limit(1);
-    if (!current) return [];
-    const next = { ...current, ...data };
-    academicPeriod.parse(next);
-    return app.db.update(periodosAcademicos).set({
+    return updateAcademicPeriod(app.db, params.id, {
       ...data,
-      nombre: `${next.anio} - ${next.periodo}`,
-      updatedAt: new Date(),
       updatedBy: r.auth!.personaId,
-    }).where(eq(periodosAcademicos.id, params.id)).returning();
+    });
   });
 }

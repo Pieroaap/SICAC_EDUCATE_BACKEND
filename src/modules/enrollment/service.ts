@@ -3,7 +3,7 @@ import type { Database } from '../../infrastructure/database/client.js';
 import {
   autorizacionesPrerrequisito, calificaciones, carreras, componentesEvaluacion,
   cursoPrerrequisitos, cursosProgramados, matriculaCursosProgramados,
-  matriculasCarrera, perfilesAlumno, planCursos, planesCurriculares,
+  matriculasCarrera, perfilesAlumno, periodosAcademicos, planCursos, planesCurriculares,
 } from '../../db/schema/index.js';
 import { badRequest, conflict, notFound } from '../../shared/errors.js';
 
@@ -37,10 +37,22 @@ export async function createCareerEnrollment(db: Database, input: CareerEnrollme
       eq(matriculasCarrera.periodoAcademicoId, input.periodoAcademicoId),
     )).limit(1);
     if (existing) throw conflict('Ya existe una matrícula para este contexto académico');
-    const [catalog] = await tx.select({ career: carreras, plan: planesCurriculares }).from(carreras)
+    const [catalog] = await tx.select({
+      career: carreras,
+      plan: planesCurriculares,
+      periodCareerId: periodosAcademicos.carreraId,
+    }).from(carreras)
       .innerJoin(planesCurriculares, eq(planesCurriculares.carreraId, carreras.id))
-      .where(and(eq(carreras.id, input.carreraId), eq(planesCurriculares.id, input.planCurricularId))).limit(1);
-    if (!catalog) throw notFound('Carrera o plan curricular no encontrado');
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, input.periodoAcademicoId))
+      .where(and(
+        eq(carreras.id, input.carreraId),
+        eq(planesCurriculares.id, input.planCurricularId),
+        eq(periodosAcademicos.estado, 'activo'),
+      )).limit(1);
+    if (!catalog) throw notFound('Carrera, plan curricular o periodo activo no encontrado');
+    if (catalog.periodCareerId !== input.carreraId) {
+      throw badRequest('El periodo académico no pertenece a la carrera seleccionada');
+    }
     const [studentProfile] = await tx.select({
       beneficio: perfilesAlumno.beneficio,
       tipoBeneficio: perfilesAlumno.tipoBeneficio,
