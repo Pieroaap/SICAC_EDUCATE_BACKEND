@@ -21,18 +21,17 @@ export const inscripcionesCarrera = pgTable('inscripciones_carrera', {
   personaId: uuid('persona_id').notNull().references(() => personas.id, { onDelete: 'restrict' }),
   carreraId: uuid('carrera_id').notNull().references(() => carreras.id, { onDelete: 'restrict' }),
   planCurricularId: uuid('plan_curricular_id').notNull().references(() => planesCurriculares.id, { onDelete: 'restrict' }),
-  fechaInicio: date('fecha_inicio').notNull(),
-  cicloInicio: integer('ciclo_inicio').notNull(),
+  periodoInicioId: uuid('periodo_inicio_id').notNull().references(() => periodosAcademicos.id, { onDelete: 'restrict' }),
   estado: careerRegistrationStateEnum('estado').notNull().default('activo'),
   ...auditColumns,
 }, (t) => [
   index('inscripciones_carrera_persona_idx').on(t.personaId),
   index('inscripciones_carrera_carrera_idx').on(t.carreraId),
   index('inscripciones_carrera_plan_idx').on(t.planCurricularId),
+  index('inscripciones_carrera_periodo_inicio_idx').on(t.periodoInicioId),
   uniqueIndex('inscripciones_carrera_activa_uq')
     .on(t.personaId, t.carreraId, t.planCurricularId)
     .where(sql`${t.estado} = 'activo'`),
-  check('inscripciones_carrera_ciclo_ck', sql`${t.cicloInicio} between 1 and 20`),
 ]);
 
 export const antecedentesAcademicos = pgTable('antecedentes_academicos', {

@@ -57,6 +57,20 @@
       "when": 1783001124550,
       "tag": "0007_wild_darwin",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783005518312,
+      "tag": "0008_small_maestro",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783014654267,
+      "tag": "0009_public_chimera",
+      "breakpoints": true
     }
   ]
 }

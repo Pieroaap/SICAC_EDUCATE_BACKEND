@@ -40,16 +40,16 @@ export async function registerEnrollmentRoutes(app: FastifyInstance): Promise<vo
     preHandler: [app.authenticate, authorize(...writers)],
     schema: {
       tags: ['Matrículas'], summary: 'Crear inscripción permanente', security,
-      body: { type: 'object', required: ['personaId', 'carreraId', 'planCurricularId', 'fechaInicio', 'cicloInicio'], properties: {
+      body: { type: 'object', required: ['personaId', 'carreraId', 'planCurricularId', 'periodoInicioId'], properties: {
         personaId: { type: 'string', format: 'uuid' }, carreraId: { type: 'string', format: 'uuid' },
-        planCurricularId: { type: 'string', format: 'uuid' }, fechaInicio: { type: 'string', format: 'date' },
-        cicloInicio: { type: 'integer', minimum: 1, maximum: 20 },
+        planCurricularId: { type: 'string', format: 'uuid' },
+        periodoInicioId: { type: 'string', format: 'uuid' },
       } },
     },
   }, async (request) => {
     const body = z.object({
       personaId: id, carreraId: id, planCurricularId: id,
-      fechaInicio: z.string().date(), cicloInicio: z.number().int().min(1).max(20),
+      periodoInicioId: id,
     }).parse(request.body);
     return createCareerRegistration(app.db, { ...body, actorId: request.auth!.personaId });
   });

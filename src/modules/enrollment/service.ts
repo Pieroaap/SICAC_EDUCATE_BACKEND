@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, notInArray } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lte, notInArray } from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
 import {
   antecedentesAcademicos, autorizacionesPrerrequisito, calificaciones, carreras, componentesEvaluacion,
@@ -28,6 +28,15 @@ export function hasApprovedAttempt(
       (average, item) => average + Number(item.grade) * Number(item.componentWeight) / 100,
       0,
     ) >= 11);
+}
+
+const periodOrder = { I: 1, II: 2, III: 3 } as const;
+
+export function compareAcademicPeriods(
+  left: { anio: number; periodo: 'I' | 'II' | 'III' },
+  right: { anio: number; periodo: 'I' | 'II' | 'III' },
+) {
+  return left.anio - right.anio || periodOrder[left.periodo] - periodOrder[right.periodo];
 }
 
 export async function createCareerEnrollment(db: Database, input: CareerEnrollmentInput) {
@@ -86,19 +95,46 @@ export async function createCareerRegistration(
   db: Database,
   input: {
     personaId: string; carreraId: string; planCurricularId: string;
-    fechaInicio: string; cicloInicio: number; actorId: string;
+    periodoInicioId: string; actorId: string;
   },
 ) {
   return db.transaction(async (tx) => {
-    const [context] = await tx.select({ planId: planesCurriculares.id })
+    const [context] = await tx.select({
+      planId: planesCurriculares.id,
+      selectedPeriodId: periodosAcademicos.id,
+      selectedPeriodYear: periodosAcademicos.anio,
+      selectedPeriodNumber: periodosAcademicos.periodo,
+    })
       .from(planesCurriculares)
       .innerJoin(perfilesAlumno, eq(perfilesAlumno.personaId, input.personaId))
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, input.periodoInicioId))
       .where(and(
         eq(planesCurriculares.id, input.planCurricularId),
         eq(planesCurriculares.carreraId, input.carreraId),
+        eq(periodosAcademicos.carreraId, input.carreraId),
         eq(perfilesAlumno.estado, 'activo'),
       )).limit(1);
-    if (!context) throw badRequest('El alumno debe estar activo y el plan debe pertenecer a la carrera');
+    if (!context) {
+      throw badRequest('El alumno debe estar activo y el plan y periodo deben pertenecer a la carrera');
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const [currentPeriod] = await tx.select({
+      anio: periodosAcademicos.anio,
+      periodo: periodosAcademicos.periodo,
+    }).from(periodosAcademicos).where(and(
+      eq(periodosAcademicos.carreraId, input.carreraId),
+      lte(periodosAcademicos.fechaInicio, today),
+      gte(periodosAcademicos.fechaFin, today),
+    )).limit(1);
+    if (!currentPeriod) {
+      throw badRequest('La carrera no tiene un periodo académico vigente');
+    }
+    if (compareAcademicPeriods(
+      { anio: context.selectedPeriodYear, periodo: context.selectedPeriodNumber },
+      currentPeriod,
+    ) < 0) {
+      throw badRequest('El periodo de inicio no puede ser anterior al periodo vigente');
+    }
     const [existing] = await tx.select({ id: inscripcionesCarrera.id })
       .from(inscripcionesCarrera).where(and(
         eq(inscripcionesCarrera.personaId, input.personaId),
@@ -109,8 +145,8 @@ export async function createCareerRegistration(
     if (existing) throw conflict('Ya existe una inscripción activa para esta carrera y plan');
     const [created] = await tx.insert(inscripcionesCarrera).values({
       personaId: input.personaId, carreraId: input.carreraId,
-      planCurricularId: input.planCurricularId, fechaInicio: input.fechaInicio,
-      cicloInicio: input.cicloInicio, createdBy: input.actorId,
+      planCurricularId: input.planCurricularId, periodoInicioId: input.periodoInicioId,
+      createdBy: input.actorId,
     }).returning();
     return created;
   });
@@ -134,12 +170,16 @@ export async function listCareerRegistrations(
       id: inscripcionesCarrera.id, personaId: inscripcionesCarrera.personaId,
       carreraId: inscripcionesCarrera.carreraId, carreraNombre: carreras.nombre,
       planCurricularId: inscripcionesCarrera.planCurricularId, planNombre: planesCurriculares.nombre,
-      fechaInicio: inscripcionesCarrera.fechaInicio, cicloInicio: inscripcionesCarrera.cicloInicio,
+      periodoInicioId: inscripcionesCarrera.periodoInicioId,
+      periodoInicioNombre: periodosAcademicos.nombre,
+      periodoInicioAnio: periodosAcademicos.anio,
+      periodoInicioNumero: periodosAcademicos.periodo,
       estado: inscripcionesCarrera.estado, createdAt: inscripcionesCarrera.createdAt,
     }).from(inscripcionesCarrera)
       .innerJoin(carreras, eq(carreras.id, inscripcionesCarrera.carreraId))
       .innerJoin(planesCurriculares, eq(planesCurriculares.id, inscripcionesCarrera.planCurricularId))
-      .where(where).orderBy(desc(inscripcionesCarrera.fechaInicio))
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, inscripcionesCarrera.periodoInicioId))
+      .where(where).orderBy(desc(periodosAcademicos.anio), desc(periodosAcademicos.periodo))
       .limit(filters.pageSize).offset((filters.page - 1) * filters.pageSize),
     db.select({ value: count() }).from(inscripcionesCarrera).where(where),
   ]);

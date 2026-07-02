@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasApprovedAttempt } from '../src/modules/enrollment/service.js';
+import { compareAcademicPeriods, hasApprovedAttempt } from '../src/modules/enrollment/service.js';
 
 describe('hasApprovedAttempt', () => {
   it('aprueba cuando un intento individual alcanza nota 11', () => {
@@ -21,5 +21,22 @@ describe('hasApprovedAttempt', () => {
       { attemptId: 'intento-1', grade: 12, componentWeight: 40 },
       { attemptId: 'intento-1', grade: 14, componentWeight: 60 },
     ])).toBe(true);
+  });
+});
+
+describe('compareAcademicPeriods', () => {
+  it('ordena periodos por año y número académico', () => {
+    expect(compareAcademicPeriods(
+      { anio: 2026, periodo: 'II' },
+      { anio: 2026, periodo: 'II' },
+    )).toBe(0);
+    expect(compareAcademicPeriods(
+      { anio: 2026, periodo: 'III' },
+      { anio: 2026, periodo: 'II' },
+    )).toBeGreaterThan(0);
+    expect(compareAcademicPeriods(
+      { anio: 2025, periodo: 'III' },
+      { anio: 2026, periodo: 'I' },
+    )).toBeLessThan(0);
   });
 });

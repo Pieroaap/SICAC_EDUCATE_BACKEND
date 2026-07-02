@@ -90,7 +90,7 @@ desarrollo el valor predeterminado es `http://localhost:5173`.
 La inscripción permanente y la matrícula periódica son recursos distintos:
 
 - `GET /inscripciones-carrera?personaId=&carreraId=&estado=&page=&pageSize=` devuelve `{ data, pagination }`.
-- `POST /inscripciones-carrera` crea el vínculo alumno–carrera–plan con `fechaInicio` y `cicloInicio`. Solo Administrador y Gestor Académico.
+- `POST /inscripciones-carrera` crea el vínculo alumno–carrera–plan con `periodoInicioId`. El periodo debe pertenecer a la carrera y ser igual o posterior al periodo vigente. Solo Administrador y Gestor Académico.
 - `PATCH /inscripciones-carrera/:id/estado` activa o inactiva el vínculo.
 - `GET /matriculas/candidatos?carreraId=&planCurricularId=&periodoAcademicoId=` devuelve alumnos activos inscritos y aún no matriculados.
 - `POST /matriculas/masiva` recibe `personaIds`, carrera, plan y periodo; devuelve resultados por alumno y resumen.
