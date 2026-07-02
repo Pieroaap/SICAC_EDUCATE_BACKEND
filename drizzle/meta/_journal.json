@@ -50,6 +50,13 @@
       "when": 1782960000000,
       "tag": "0006_culminated_academic_periods",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783001124550,
+      "tag": "0007_wild_darwin",
+      "breakpoints": true
     }
   ]
 }

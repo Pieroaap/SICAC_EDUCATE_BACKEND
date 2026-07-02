@@ -13,6 +13,50 @@ export const enrollmentStateEnum = pgEnum('estado_matricula', ['activo', 'retira
 // clasificación categórica. Ninguna tabla nueva debe utilizarlo.
 export const legacyBenefitTypeEnum = pgEnum('tipo_beneficio', ['credito', 'beca']);
 export const authorizationStateEnum = pgEnum('estado_autorizacion', ['pendiente', 'aprobada', 'rechazada']);
+export const careerRegistrationStateEnum = pgEnum('estado_inscripcion_carrera', ['activo', 'inactivo']);
+export const academicRecordSourceEnum = pgEnum('fuente_antecedente_academico', ['manual', 'importacion']);
+
+export const inscripcionesCarrera = pgTable('inscripciones_carrera', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  personaId: uuid('persona_id').notNull().references(() => personas.id, { onDelete: 'restrict' }),
+  carreraId: uuid('carrera_id').notNull().references(() => carreras.id, { onDelete: 'restrict' }),
+  planCurricularId: uuid('plan_curricular_id').notNull().references(() => planesCurriculares.id, { onDelete: 'restrict' }),
+  fechaInicio: date('fecha_inicio').notNull(),
+  cicloInicio: integer('ciclo_inicio').notNull(),
+  estado: careerRegistrationStateEnum('estado').notNull().default('activo'),
+  ...auditColumns,
+}, (t) => [
+  index('inscripciones_carrera_persona_idx').on(t.personaId),
+  index('inscripciones_carrera_carrera_idx').on(t.carreraId),
+  index('inscripciones_carrera_plan_idx').on(t.planCurricularId),
+  uniqueIndex('inscripciones_carrera_activa_uq')
+    .on(t.personaId, t.carreraId, t.planCurricularId)
+    .where(sql`${t.estado} = 'activo'`),
+  check('inscripciones_carrera_ciclo_ck', sql`${t.cicloInicio} between 1 and 20`),
+]);
+
+export const antecedentesAcademicos = pgTable('antecedentes_academicos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  personaId: uuid('persona_id').notNull().references(() => personas.id, { onDelete: 'restrict' }),
+  planCursoId: uuid('plan_curso_id').notNull().references(() => planCursos.id, { onDelete: 'restrict' }),
+  resultado: varchar('resultado', { length: 20 }).notNull().default('aprobado'),
+  fechaReferencial: date('fecha_referencial'),
+  periodoReferencial: varchar('periodo_referencial', { length: 100 }),
+  observacion: text('observacion'),
+  fuente: academicRecordSourceEnum('fuente').notNull().default('manual'),
+  reconocidoPorPersonaId: uuid('reconocido_por_persona_id').notNull().references(() => personas.id, { onDelete: 'restrict' }),
+  ...auditColumns,
+}, (t) => [
+  uniqueIndex('antecedentes_academicos_persona_curso_uq').on(t.personaId, t.planCursoId),
+  index('antecedentes_academicos_persona_idx').on(t.personaId),
+  index('antecedentes_academicos_plan_curso_idx').on(t.planCursoId),
+  index('antecedentes_academicos_actor_idx').on(t.reconocidoPorPersonaId),
+  check('antecedentes_academicos_resultado_ck', sql`${t.resultado} = 'aprobado'`),
+  check(
+    'antecedentes_academicos_referencia_ck',
+    sql`${t.fechaReferencial} is not null or ${t.periodoReferencial} is not null`,
+  ),
+]);
 
 export const matriculasCarrera = pgTable('matriculas_carrera', {
   id: uuid('id').primaryKey().defaultRandom(),

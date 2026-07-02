@@ -85,3 +85,16 @@ La carga directa de un libro Excel no forma parte de la API publicada.
 
 `CORS_ORIGINS` contiene los orígenes permitidos separados por comas. Para
 desarrollo el valor predeterminado es `http://localhost:5173`.
+# Corte 3.1: inscripción permanente y antecedentes
+
+La inscripción permanente y la matrícula periódica son recursos distintos:
+
+- `GET /inscripciones-carrera?personaId=&carreraId=&estado=&page=&pageSize=` devuelve `{ data, pagination }`.
+- `POST /inscripciones-carrera` crea el vínculo alumno–carrera–plan con `fechaInicio` y `cicloInicio`. Solo Administrador y Gestor Académico.
+- `PATCH /inscripciones-carrera/:id/estado` activa o inactiva el vínculo.
+- `GET /matriculas/candidatos?carreraId=&planCurricularId=&periodoAcademicoId=` devuelve alumnos activos inscritos y aún no matriculados.
+- `POST /matriculas/masiva` recibe `personaIds`, carrera, plan y periodo; devuelve resultados por alumno y resumen.
+- `GET /antecedentes-academicos?personaId=&page=&pageSize=` devuelve `{ data, pagination }`.
+- `POST /antecedentes-academicos` reconoce manualmente un curso aprobado. Solo Dirección Académica; exige `fechaReferencial` o `periodoReferencial`.
+
+`fuente` admite `manual` y reserva `importacion` para el contrato futuro de Excel, pero no existe endpoint de importación en este corte. La matrícula individual existente también exige una inscripción activa y la fecha continúa asignándose en backend.

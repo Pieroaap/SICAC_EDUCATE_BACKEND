@@ -1,9 +1,10 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, notInArray } from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
 import {
-  autorizacionesPrerrequisito, calificaciones, carreras, componentesEvaluacion,
+  antecedentesAcademicos, autorizacionesPrerrequisito, calificaciones, carreras, componentesEvaluacion,
   cursoPrerrequisitos, cursosProgramados, matriculaCursosProgramados,
-  matriculasCarrera, perfilesAlumno, periodosAcademicos, planCursos, planesCurriculares,
+  inscripcionesCarrera, matriculasCarrera, perfilesAlumno, periodosAcademicos, personas,
+  planCursos, planesCurriculares, cursos,
 } from '../../db/schema/index.js';
 import { badRequest, conflict, notFound } from '../../shared/errors.js';
 
@@ -31,6 +32,14 @@ export function hasApprovedAttempt(
 
 export async function createCareerEnrollment(db: Database, input: CareerEnrollmentInput) {
   return db.transaction(async (tx) => {
+    const [registration] = await tx.select({ id: inscripcionesCarrera.id })
+      .from(inscripcionesCarrera).where(and(
+        eq(inscripcionesCarrera.personaId, input.personaId),
+        eq(inscripcionesCarrera.carreraId, input.carreraId),
+        eq(inscripcionesCarrera.planCurricularId, input.planCurricularId),
+        eq(inscripcionesCarrera.estado, 'activo'),
+      )).limit(1);
+    if (!registration) throw badRequest('El alumno no tiene una inscripción activa en la carrera y plan');
     const [existing] = await tx.select({ id: matriculasCarrera.id }).from(matriculasCarrera).where(and(
       eq(matriculasCarrera.personaId, input.personaId), eq(matriculasCarrera.carreraId, input.carreraId),
       eq(matriculasCarrera.planCurricularId, input.planCurricularId),
@@ -71,6 +80,184 @@ export async function createCareerEnrollment(db: Database, input: CareerEnrollme
     }).returning();
     return created;
   });
+}
+
+export async function createCareerRegistration(
+  db: Database,
+  input: {
+    personaId: string; carreraId: string; planCurricularId: string;
+    fechaInicio: string; cicloInicio: number; actorId: string;
+  },
+) {
+  return db.transaction(async (tx) => {
+    const [context] = await tx.select({ planId: planesCurriculares.id })
+      .from(planesCurriculares)
+      .innerJoin(perfilesAlumno, eq(perfilesAlumno.personaId, input.personaId))
+      .where(and(
+        eq(planesCurriculares.id, input.planCurricularId),
+        eq(planesCurriculares.carreraId, input.carreraId),
+        eq(perfilesAlumno.estado, 'activo'),
+      )).limit(1);
+    if (!context) throw badRequest('El alumno debe estar activo y el plan debe pertenecer a la carrera');
+    const [existing] = await tx.select({ id: inscripcionesCarrera.id })
+      .from(inscripcionesCarrera).where(and(
+        eq(inscripcionesCarrera.personaId, input.personaId),
+        eq(inscripcionesCarrera.carreraId, input.carreraId),
+        eq(inscripcionesCarrera.planCurricularId, input.planCurricularId),
+        eq(inscripcionesCarrera.estado, 'activo'),
+      )).limit(1);
+    if (existing) throw conflict('Ya existe una inscripción activa para esta carrera y plan');
+    const [created] = await tx.insert(inscripcionesCarrera).values({
+      personaId: input.personaId, carreraId: input.carreraId,
+      planCurricularId: input.planCurricularId, fechaInicio: input.fechaInicio,
+      cicloInicio: input.cicloInicio, createdBy: input.actorId,
+    }).returning();
+    return created;
+  });
+}
+
+export async function listCareerRegistrations(
+  db: Database,
+  filters: {
+    personaId?: string | undefined; carreraId?: string | undefined;
+    estado?: 'activo' | 'inactivo' | undefined; page: number; pageSize: number;
+  },
+) {
+  const conditions = [
+    filters.personaId ? eq(inscripcionesCarrera.personaId, filters.personaId) : undefined,
+    filters.carreraId ? eq(inscripcionesCarrera.carreraId, filters.carreraId) : undefined,
+    filters.estado ? eq(inscripcionesCarrera.estado, filters.estado) : undefined,
+  ].filter(Boolean) as ReturnType<typeof eq>[];
+  const where = conditions.length ? and(...conditions) : undefined;
+  const [data, totalRows] = await Promise.all([
+    db.select({
+      id: inscripcionesCarrera.id, personaId: inscripcionesCarrera.personaId,
+      carreraId: inscripcionesCarrera.carreraId, carreraNombre: carreras.nombre,
+      planCurricularId: inscripcionesCarrera.planCurricularId, planNombre: planesCurriculares.nombre,
+      fechaInicio: inscripcionesCarrera.fechaInicio, cicloInicio: inscripcionesCarrera.cicloInicio,
+      estado: inscripcionesCarrera.estado, createdAt: inscripcionesCarrera.createdAt,
+    }).from(inscripcionesCarrera)
+      .innerJoin(carreras, eq(carreras.id, inscripcionesCarrera.carreraId))
+      .innerJoin(planesCurriculares, eq(planesCurriculares.id, inscripcionesCarrera.planCurricularId))
+      .where(where).orderBy(desc(inscripcionesCarrera.fechaInicio))
+      .limit(filters.pageSize).offset((filters.page - 1) * filters.pageSize),
+    db.select({ value: count() }).from(inscripcionesCarrera).where(where),
+  ]);
+  const total = totalRows[0]?.value ?? 0;
+  return { data, pagination: { page: filters.page, pageSize: filters.pageSize, total, totalPages: Math.ceil(total / filters.pageSize) } };
+}
+
+export async function updateCareerRegistrationState(
+  db: Database, input: { id: string; estado: 'activo' | 'inactivo'; actorId: string },
+) {
+  const [updated] = await db.update(inscripcionesCarrera).set({
+    estado: input.estado, updatedAt: new Date(), updatedBy: input.actorId,
+  }).where(eq(inscripcionesCarrera.id, input.id)).returning();
+  if (!updated) throw notFound('Inscripción no encontrada');
+  return updated;
+}
+
+export async function listBulkEnrollmentCandidates(
+  db: Database,
+  input: { carreraId: string; planCurricularId: string; periodoAcademicoId: string; page: number; pageSize: number },
+) {
+  const enrolled = db.select({ personaId: matriculasCarrera.personaId }).from(matriculasCarrera)
+    .where(eq(matriculasCarrera.periodoAcademicoId, input.periodoAcademicoId));
+  const conditions = and(
+    eq(inscripcionesCarrera.carreraId, input.carreraId),
+    eq(inscripcionesCarrera.planCurricularId, input.planCurricularId),
+    eq(inscripcionesCarrera.estado, 'activo'),
+    eq(perfilesAlumno.estado, 'activo'),
+    notInArray(inscripcionesCarrera.personaId, enrolled),
+  );
+  const base = db.select({
+    personaId: personas.id, dni: personas.numeroDocumento, nombres: personas.nombres,
+    apellidoPaterno: personas.apellidoPaterno, apellidoMaterno: personas.apellidoMaterno,
+  }).from(inscripcionesCarrera)
+    .innerJoin(perfilesAlumno, eq(perfilesAlumno.personaId, inscripcionesCarrera.personaId))
+    .innerJoin(personas, eq(personas.id, inscripcionesCarrera.personaId))
+    .where(conditions);
+  const [data, totals] = await Promise.all([
+    base.orderBy(personas.apellidoPaterno, personas.apellidoMaterno, personas.nombres)
+      .limit(input.pageSize).offset((input.page - 1) * input.pageSize),
+    db.select({ value: count() }).from(inscripcionesCarrera)
+      .innerJoin(perfilesAlumno, eq(perfilesAlumno.personaId, inscripcionesCarrera.personaId))
+      .where(conditions),
+  ]);
+  const total = totals[0]?.value ?? 0;
+  return { data, pagination: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
+}
+
+export async function createBulkCareerEnrollments(
+  db: Database,
+  input: { personaIds: string[]; carreraId: string; planCurricularId: string; periodoAcademicoId: string; actorId: string },
+) {
+  const results = [];
+  for (const personaId of [...new Set(input.personaIds)]) {
+    try {
+      const data = await createCareerEnrollment(db, {
+        personaId, carreraId: input.carreraId, planCurricularId: input.planCurricularId,
+        periodoAcademicoId: input.periodoAcademicoId,
+        fechaMatricula: new Date().toISOString().slice(0, 10), actorId: input.actorId,
+      });
+      results.push({ personaId, success: true, data });
+    } catch (error) {
+      results.push({ personaId, success: false, error: error instanceof Error ? error.message : 'Error desconocido' });
+    }
+  }
+  return { data: results, summary: { requested: input.personaIds.length, created: results.filter((r) => r.success).length, failed: results.filter((r) => !r.success).length } };
+}
+
+export async function createAcademicRecord(
+  db: Database,
+  input: {
+    personaId: string; planCursoId: string; fechaReferencial?: string | undefined;
+    periodoReferencial?: string | undefined; observacion?: string | undefined;
+    fuente: 'manual' | 'importacion'; actorId: string;
+  },
+) {
+  const [valid] = await db.select({ id: inscripcionesCarrera.id }).from(inscripcionesCarrera)
+    .innerJoin(planCursos, eq(planCursos.planCurricularId, inscripcionesCarrera.planCurricularId))
+    .where(and(
+      eq(inscripcionesCarrera.personaId, input.personaId),
+      eq(planCursos.id, input.planCursoId),
+    )).limit(1);
+  if (!valid) throw badRequest('El curso no pertenece a un plan inscrito por el alumno');
+  const [existing] = await db.select({ id: antecedentesAcademicos.id }).from(antecedentesAcademicos)
+    .where(and(eq(antecedentesAcademicos.personaId, input.personaId), eq(antecedentesAcademicos.planCursoId, input.planCursoId))).limit(1);
+  if (existing) throw conflict('Ya existe un antecedente para este alumno y curso');
+  const [created] = await db.insert(antecedentesAcademicos).values({
+    personaId: input.personaId, planCursoId: input.planCursoId,
+    fechaReferencial: input.fechaReferencial, periodoReferencial: input.periodoReferencial,
+    observacion: input.observacion, fuente: input.fuente,
+    reconocidoPorPersonaId: input.actorId, createdBy: input.actorId,
+  }).returning();
+  return created;
+}
+
+export async function listAcademicRecords(
+  db: Database, input: { personaId: string; page: number; pageSize: number },
+) {
+  const where = eq(antecedentesAcademicos.personaId, input.personaId);
+  const [data, totals] = await Promise.all([
+    db.select({
+      id: antecedentesAcademicos.id, personaId: antecedentesAcademicos.personaId,
+      planCursoId: antecedentesAcademicos.planCursoId, cursoCodigo: cursos.codigo,
+      cursoNombre: cursos.nombre, ciclo: planCursos.ciclo, resultado: antecedentesAcademicos.resultado,
+      fechaReferencial: antecedentesAcademicos.fechaReferencial,
+      periodoReferencial: antecedentesAcademicos.periodoReferencial,
+      observacion: antecedentesAcademicos.observacion, fuente: antecedentesAcademicos.fuente,
+      reconocidoPorPersonaId: antecedentesAcademicos.reconocidoPorPersonaId,
+      createdAt: antecedentesAcademicos.createdAt,
+    }).from(antecedentesAcademicos)
+      .innerJoin(planCursos, eq(planCursos.id, antecedentesAcademicos.planCursoId))
+      .innerJoin(cursos, eq(cursos.id, planCursos.cursoId))
+      .where(where).orderBy(desc(antecedentesAcademicos.createdAt))
+      .limit(input.pageSize).offset((input.page - 1) * input.pageSize),
+    db.select({ value: count() }).from(antecedentesAcademicos).where(where),
+  ]);
+  const total = totals[0]?.value ?? 0;
+  return { data, pagination: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
 }
 
 export async function enrollInScheduledCourse(db: Database, enrollmentId: string, scheduledCourseId: string, date: string, actorId: string) {
@@ -114,6 +301,12 @@ export async function enrollInScheduledCourse(db: Database, enrollmentId: string
         const rows = grades.filter((g) => g.prerequisiteId === prerequisiteId);
         if (hasApprovedAttempt(rows)) approved.add(prerequisiteId);
       }
+      const recognized = await tx.select({ id: antecedentesAcademicos.planCursoId })
+        .from(antecedentesAcademicos).where(and(
+          eq(antecedentesAcademicos.personaId, context.enrollment.personaId),
+          inArray(antecedentesAcademicos.planCursoId, prerequisiteIds),
+        ));
+      for (const row of recognized) approved.add(row.id);
       if (approved.size !== prerequisiteIds.length) {
         const [authorization] = await tx.select({ id: autorizacionesPrerrequisito.id }).from(autorizacionesPrerrequisito).where(and(
           eq(autorizacionesPrerrequisito.matriculaCarreraId, enrollmentId),
