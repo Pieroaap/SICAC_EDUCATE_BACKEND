@@ -5,6 +5,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  text,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
@@ -43,6 +44,7 @@ export const perfilesAlumno = pgTable('perfiles_alumno', {
   periodoIngreso: varchar('periodo_ingreso', { length: 30 }).notNull(),
   beneficio: benefitModalityEnum('beneficio').notNull().default('normal'),
   tipoBeneficio: benefitClassificationEnum('tipo_beneficio').notNull().default('regular'),
+  condicionMedica: text('condicion_medica'),
   ...auditColumns,
 }, (table) => [
   index('perfiles_alumno_estado_idx').on(table.estado),

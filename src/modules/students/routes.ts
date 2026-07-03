@@ -63,6 +63,7 @@ export async function registerStudentRoutes(app: FastifyInstance): Promise<void>
             type: 'string',
             enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'],
           },
+          condicionMedica: { type: ['string', 'null'], maxLength: 1000 },
         },
       },
     },
@@ -72,6 +73,7 @@ export async function registerStudentRoutes(app: FastifyInstance): Promise<void>
       estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']).optional(),
       beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']).optional(),
       tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']).optional(),
+      condicionMedica: z.string().trim().max(1000).nullable().optional(),
     }).refine((value) => Object.keys(value).length > 0, 'Debe indicar al menos un campo').parse(request.body);
     return updateStudentProfile(app.db, params.personaId, body, request.auth!.personaId);
   });

@@ -66,6 +66,7 @@ export async function createPersonWithoutAccess(
       periodoIngreso: string;
       beneficio: NonNullable<typeof perfilesAlumno.$inferInsert.beneficio>;
       tipoBeneficio: NonNullable<typeof perfilesAlumno.$inferInsert.tipoBeneficio>;
+      condicionMedica?: string | null | undefined;
     } | undefined;
     tutor?: ((typeof personas.$inferInsert) & {
       tipoRelacion: string;
@@ -77,6 +78,7 @@ export async function createPersonWithoutAccess(
     ? {
       ...input.alumnoPerfil,
       periodoIngreso: input.alumnoPerfil.periodoIngreso.trim().toUpperCase().replace(/\s*-\s*/, '-'),
+      condicionMedica: input.alumnoPerfil.condicionMedica?.trim() || null,
     }
     : undefined;
   if (input.initialRole === 'ALUMNO' && !input.alumnoPerfil) {
@@ -432,6 +434,7 @@ export async function getPersonDetail(db: Database, personId: string) {
       periodoIngreso: perfilesAlumno.periodoIngreso,
       beneficio: perfilesAlumno.beneficio,
       tipoBeneficio: perfilesAlumno.tipoBeneficio,
+      condicionMedica: perfilesAlumno.condicionMedica,
     }).from(perfilesAlumno)
       .where(eq(perfilesAlumno.personaId, personId))
       .limit(1),

@@ -14,8 +14,6 @@ import {
   listScheduledCourses,
   listScheduledCourseStudents,
   listScheduledCourseCandidates,
-  listScheduledWorkshops,
-  listWorkshopEnrollments,
   resolvePrerequisiteAuthorization,
   updateScheduledCourse,
   withdrawCourseEnrollment,
@@ -256,13 +254,4 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
     schema: schema('Egreso', 'Listar egresados'),
   }, () => listGraduates(app.db));
 
-  app.get('/talleres-programados', {
-    preHandler: [app.authenticate],
-    schema: schema('Talleres', 'Listar talleres programados'),
-  }, () => listScheduledWorkshops(app.db));
-
-  app.get('/talleres-programados/:id/inscripciones', {
-    ...managed,
-    schema: schema('Talleres', 'Listar inscripciones de un taller programado', { params: paramsSchema }),
-  }, (request) => listWorkshopEnrollments(app.db, z.object({ id }).parse(request.params).id));
 }

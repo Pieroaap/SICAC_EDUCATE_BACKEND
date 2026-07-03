@@ -58,6 +58,27 @@ La autenticación utiliza el token Bearer retornado por el inicio de sesión con
 - Egreso: consultar elegibilidad, aprobar y listar egresados.
 - Talleres: administrar talleres, programaciones e inscripciones.
 
+### Talleres
+
+La condición médica opcional del perfil de alumno se incluye únicamente en los
+contratos gestores de alta, detalle y edición. No se expone en listados ni en
+flujos docentes.
+
+- `GET /talleres`: catálogo paginado.
+- `GET /talleres/responsables`: personas activas sin rol `ALUMNO`, con búsqueda
+  paginada por nombre, apellido o documento.
+- `POST /talleres` y `PATCH /talleres/:id`: creación y edición.
+- `GET /talleres-programados`: programaciones paginadas con horarios y vacantes.
+- `POST /talleres-programados` y `PATCH /talleres-programados/:id`.
+- `PATCH /talleres-programados/:id/estado`: transición manual.
+- `GET /talleres-programados/:id/participantes`: participantes paginados.
+- `POST /talleres-programados/:id/inscripciones`: persona existente o externa.
+- `PATCH /inscripciones-taller/:id/estado`: retiro o reactivación.
+
+Los tres roles gestores tienen acceso. Solo una programación `abierto` acepta
+inscripciones. El agotamiento de cupo devuelve `409` con un mensaje apto para
+mostrar al usuario.
+
 ## Dashboard
 
 Nota de identidad: `GET /personas` acepta, ademas de `search`, `estado`,
@@ -105,3 +126,41 @@ La inscripción permanente y la matrícula periódica son recursos distintos:
 - `POST /personas/:id/roles` permite al Administrador agregar roles; `ALUMNO` exige datos de perfil e inscripción.
 - La asignación de tutor usa fecha automática del backend.
 - El listado de excepciones admite solo Administrador y Director; la resolución sigue exclusiva de Dirección.
+
+# Corte 4: evaluación académica
+
+- `GET /evaluacion/cursos?page=&pageSize=&periodoId=` devuelve cursos evaluables
+  con `{ data, pagination }`. Para `PROFESOR` se restringe a sus asignaciones.
+- `GET /cursos-programados/:id/libro-notas` devuelve curso, estado del acta,
+  componentes ordenados, alumnos activos y notas.
+- `PUT /cursos-programados/:id/componentes-evaluacion` recibe componentes con
+  nombre, porcentaje y orden. Los pesos deben sumar 100; el profesor asignado
+  puede modificarlos mientras el acta esté abierta.
+- `PUT /cursos-programados/:id/calificaciones` crea o actualiza notas de 0 a 20
+  sin duplicar evaluación e inscripción.
+- `POST /cursos-programados/:id/acta/publicar` cierra y publica en una sola
+  transacción. Rechaza pesos incompletos, alumnos sin notas o actas publicadas.
+- `GET /cursos-programados/:id/acta` devuelve los resultados finales.
+- `GET /alumnos/:id/historial-academico?page=&pageSize=` devuelve resultados
+  regulares publicados, separados de los antecedentes reconocidos.
+
+La equivalencia es A `17–20`, B `14–<17`, C `11–<14` y D `0–<11`. La
+publicación bloquea definitivamente componentes y notas.
+
+# Corte 4: asistencia docente
+
+- `GET /asistencia/cursos` lista cursos según el actor.
+- `GET /cursos-programados/:id/libro-asistencia?fecha=YYYY-MM-DD` devuelve
+  alumnos, asistencia diaria, conteos, riesgo y retiro.
+- `PUT /cursos-programados/:id/asistencias` guarda por lote mediante `entries`
+  con `enrollmentId` y `state`.
+- `POST /retiros-asistencia/:id/solicitudes-reactivacion` permite al profesor
+  asignado solicitar revisión cuando el alumno quedó bajo los umbrales.
+- `GET /solicitudes-reactivacion-asistencia` está disponible para Gestor y
+  Dirección Académica.
+- `PATCH /solicitudes-reactivacion-asistencia/:id/resolucion` aprueba o rechaza;
+  aprobar reactiva la inscripción y conserva auditoría.
+
+Tres tardanzas equivalen a una falta. Se genera alerta con dos faltas
+equivalentes o seis tardanzas, y retiro con tres faltas, nueve tardanzas o tres
+faltas equivalentes. Corregir asistencia nunca reactiva automáticamente.

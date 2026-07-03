@@ -1,0 +1,1 @@
+ALTER TABLE "perfiles_alumno" ADD COLUMN "condicion_medica" text;

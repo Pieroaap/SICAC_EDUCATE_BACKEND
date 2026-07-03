@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../src/shared/errors.js';
-import { gradeToLetter } from '../src/modules/evaluation/service.js';
+import {
+  calculateWeightedGrade,
+  gradeToLetter,
+  roundGrade,
+} from '../src/modules/evaluation/constants.js';
 
 describe('gradeToLetter', () => {
   it.each([
@@ -12,5 +16,16 @@ describe('gradeToLetter', () => {
 
   it('rechaza notas fuera del rango', () => {
     expect(() => gradeToLetter(21)).toThrow(AppError);
+    expect(() => gradeToLetter(-0.01)).toThrow(AppError);
+  });
+});
+
+describe('cálculo académico', () => {
+  it('conserva dos decimales sin redondear a entero', () => {
+    expect(roundGrade(13.666)).toBe(13.67);
+    expect(calculateWeightedGrade([
+      { grade: 15, weight: 40 },
+      { grade: 12, weight: 60 },
+    ])).toBe(13.2);
   });
 });

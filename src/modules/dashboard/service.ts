@@ -1,4 +1,4 @@
-import { and, count, countDistinct, eq, gte, lte } from 'drizzle-orm';
+import { and, count, countDistinct, eq, gte, inArray, lte } from 'drizzle-orm';
 import {
   autorizacionesPrerrequisito,
   cursosProgramados,
@@ -73,7 +73,8 @@ async function managerMetrics(db: Database) {
     db.select({ value: count() }).from(usuariosAuth).where(eq(usuariosAuth.estadoAcceso, 'activo')),
     db.select({ value: count() }).from(matriculasCarrera).where(eq(matriculasCarrera.estado, 'activo')),
     db.select({ value: count() }).from(cursosProgramados).where(eq(cursosProgramados.estado, 'activo')),
-    db.select({ value: count() }).from(talleresProgramados).where(eq(talleresProgramados.estado, 'activo')),
+    db.select({ value: count() }).from(talleresProgramados)
+      .where(inArray(talleresProgramados.estado, ['abierto', 'en_curso'])),
   ]);
 
   return {

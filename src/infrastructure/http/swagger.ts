@@ -21,6 +21,7 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
         { name: 'Estructura académica', description: 'Carreras, planes, cursos y periodos' },
         { name: 'Matrículas', description: 'Matrículas de carrera e inscripciones a cursos' },
         { name: 'Evaluación', description: 'Componentes y calificaciones' },
+        { name: 'Evaluación académica', description: 'Notas, promedios, actas e historial regular' },
         { name: 'Asistencia', description: 'Control de asistencia e inhabilitación' },
         { name: 'Egreso', description: 'Elegibilidad y aprobación de egresados' },
         { name: 'Talleres', description: 'Talleres extracurriculares e inscripciones' },

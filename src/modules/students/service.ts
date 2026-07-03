@@ -306,6 +306,7 @@ type UpdateStudentProfileInput = {
   tipoBeneficio?: BenefitType | undefined;
   anioIngreso?: number | undefined;
   periodoIngreso?: string | undefined;
+  condicionMedica?: string | null | undefined;
 };
 
 export async function updateStudentProfile(
@@ -330,6 +331,9 @@ export async function updateStudentProfile(
   const [updated] = await db.update(perfilesAlumno).set({
     ...data,
     periodoIngreso: normalizedPeriod ?? data.periodoIngreso,
+    condicionMedica: data.condicionMedica === undefined
+      ? undefined
+      : data.condicionMedica?.trim() || null,
     updatedAt: new Date(),
     updatedBy: actorId,
   }).where(eq(perfilesAlumno.personaId, personaId)).returning();

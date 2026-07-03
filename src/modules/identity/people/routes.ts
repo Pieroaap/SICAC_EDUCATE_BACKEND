@@ -26,12 +26,13 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
     fechaNacimiento: z.string().date().nullable().optional(),
     estado: z.enum(['activo', 'inactivo']).optional(),
   });
-  const studentProfileBody = z.object({
+const studentProfileBody = z.object({
     estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']),
     anioIngreso: z.number().int().min(1900).max(2100),
     periodoIngreso: z.string().trim().regex(/^[0-9]{4}\s*-\s*(I|II|III)$/),
     beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
-    tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
+  tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
+  condicionMedica: z.string().trim().max(1000).nullable().optional(),
   });
   const roleCode = z.enum([
     'ALUMNO',
@@ -159,6 +160,7 @@ export async function registerPeopleRoutes(app: FastifyInstance): Promise<void> 
               periodoIngreso: { type: 'string' },
               beneficio: { type: 'string', enum: ['becado', 'credito', 'becado_credito', 'normal'] },
               tipoBeneficio: { type: 'string', enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'] },
+              condicionMedica: { type: ['string', 'null'], maxLength: 1000 },
             },
           },
           initialRegistration: {
