@@ -45,6 +45,7 @@ async function getCourseContext(db: Database, courseId: string, auth: Attendance
   if (!isManager(auth) && course.professorId !== auth.personaId) {
     throw forbidden('El profesor solo puede gestionar sus cursos asignados');
   }
+  if (course.periodState !== 'activo') throw conflict('El periodo académico no está activo');
   return course;
 }
 
@@ -53,7 +54,6 @@ function validateAttendanceDate(
   course: { startDate: string; endDate: string; periodState: string },
 ) {
   const today = new Date().toISOString().slice(0, 10);
-  if (course.periodState === 'culminado') throw conflict('El periodo académico está culminado');
   if (date < course.startDate || date > course.endDate) {
     throw badRequest('La fecha debe estar dentro del periodo académico');
   }
@@ -72,7 +72,7 @@ export async function listAttendanceCourses(
   db: Database,
   input: { auth: AttendanceAuth; page: number; pageSize: number; periodoId?: string | undefined },
 ) {
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(periodosAcademicos.estado, 'activo')];
   if (!isManager(input.auth)) conditions.push(eq(cursosProgramados.profesorPersonaId, input.auth.personaId));
   if (input.periodoId) conditions.push(eq(cursosProgramados.periodoAcademicoId, input.periodoId));
   const where = conditions.length ? and(...conditions) : undefined;
@@ -101,7 +101,9 @@ export async function listAttendanceCourses(
       .innerJoin(personas, eq(personas.id, cursosProgramados.profesorPersonaId))
       .where(where).orderBy(desc(periodosAcademicos.fechaInicio), asc(cursos.nombre))
       .limit(input.pageSize).offset((input.page - 1) * input.pageSize),
-    db.select({ value: count() }).from(cursosProgramados).where(where),
+    db.select({ value: count() }).from(cursosProgramados)
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
+      .where(where),
   ]);
   const total = Number(totalRows[0]?.value ?? 0);
   return { data, pagination: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
@@ -114,6 +116,7 @@ export async function getAttendanceBook(
   auth: AttendanceAuth,
 ) {
   const course = await getCourseContext(db, courseId, auth);
+  if (course.periodState !== 'activo') throw conflict('El periodo académico no está activo');
   if (date < course.startDate || date > course.endDate) throw badRequest('La fecha debe estar dentro del periodo académico');
   const students = await db.select({
     enrollmentId: matriculaCursosProgramados.id,

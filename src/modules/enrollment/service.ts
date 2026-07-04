@@ -65,7 +65,7 @@ export async function createCareerEnrollment(db: Database, input: CareerEnrollme
       .where(and(
         eq(carreras.id, input.carreraId),
         eq(planesCurriculares.id, input.planCurricularId),
-        eq(periodosAcademicos.estado, 'activo'),
+        inArray(periodosAcademicos.estado, ['programado', 'activo']),
       )).limit(1);
     if (!catalog) throw notFound('Carrera, plan curricular o periodo activo no encontrado');
     if (catalog.periodCareerId !== input.carreraId) {
@@ -121,6 +121,7 @@ export async function createCareerRegistration(
         eq(planesCurriculares.id, activePlan.id),
         eq(planesCurriculares.carreraId, input.carreraId),
         eq(periodosAcademicos.carreraId, input.carreraId),
+        inArray(periodosAcademicos.estado, ['programado', 'activo']),
         eq(perfilesAlumno.estado, 'activo'),
       )).limit(1);
     if (!context) {
@@ -132,6 +133,7 @@ export async function createCareerRegistration(
       periodo: periodosAcademicos.periodo,
     }).from(periodosAcademicos).where(and(
       eq(periodosAcademicos.carreraId, input.carreraId),
+      eq(periodosAcademicos.estado, 'activo'),
       lte(periodosAcademicos.fechaInicio, today),
       gte(periodosAcademicos.fechaFin, today),
     )).limit(1);

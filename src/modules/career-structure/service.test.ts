@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidPrerequisites, buildPlanCode } from './service.js';
+import { assertAcademicPeriodTransition, assertValidPrerequisites, buildPlanCode } from './service.js';
 
 const target = { id: 'target', planCurricularId: 'plan-a', ciclo: 3 };
 
@@ -37,5 +37,27 @@ describe('buildPlanCode', () => {
 
   it('respeta el limite del catalogo', () => {
     expect(buildPlanCode('carrera-muy-extensa', 'version-muy-extensa')).toHaveLength(30);
+  });
+});
+
+describe('assertAcademicPeriodTransition', () => {
+  it('permite avanzar de programado a activo y de activo a culminado', () => {
+    expect(() => assertAcademicPeriodTransition('programado', 'activo', '2026-08-31')).not.toThrow();
+    expect(() => assertAcademicPeriodTransition('activo', 'culminado', '2026-05-04')).not.toThrow();
+  });
+
+  it('permite corregir a programado un periodo que todavía no inicia', () => {
+    expect(() => assertAcademicPeriodTransition(
+      'activo', 'programado', '2026-08-31', '2026-07-03',
+    )).not.toThrow();
+  });
+
+  it('impide reabrir o retroceder periodos iniciados', () => {
+    expect(() => assertAcademicPeriodTransition(
+      'culminado', 'activo', '2026-01-06', '2026-07-03',
+    )).toThrow(/No se puede cambiar/);
+    expect(() => assertAcademicPeriodTransition(
+      'activo', 'programado', '2026-05-04', '2026-07-03',
+    )).toThrow(/No se puede cambiar/);
   });
 });

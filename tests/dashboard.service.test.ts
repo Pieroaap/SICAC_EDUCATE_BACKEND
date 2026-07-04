@@ -15,7 +15,7 @@ describe('buildQuickActions', () => {
 
   it('limita al profesor a sus cursos', () => {
     expect(buildQuickActions(['PROFESOR'])).toEqual([
-      { key: 'mis-cursos', label: 'Ver mis cursos', to: '/docencia/cursos' },
+      { key: 'mis-cursos', label: 'Ver evaluaciones', to: '/evaluacion' },
     ]);
   });
 

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."estado_periodo_academico" ADD VALUE 'programado' BEFORE 'activo';

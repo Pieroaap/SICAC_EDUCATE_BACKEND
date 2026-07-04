@@ -51,7 +51,12 @@ async function assertCourseAccess(db: Database, courseId: string, auth: Evaluati
   const [course] = await db.select({
     id: cursosProgramados.id,
     professorId: cursosProgramados.profesorPersonaId,
-  }).from(cursosProgramados).where(eq(cursosProgramados.id, courseId)).limit(1);
+  }).from(cursosProgramados)
+    .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
+    .where(and(
+      eq(cursosProgramados.id, courseId),
+      eq(periodosAcademicos.estado, 'activo'),
+    )).limit(1);
   if (!course) throw notFound('Curso programado no encontrado');
   if (!isManager(auth) && course.professorId !== auth.personaId) {
     throw forbidden('El profesor solo puede gestionar sus cursos asignados');
@@ -88,7 +93,7 @@ export async function listEvaluableCourses(
     pageSize: number;
   },
 ) {
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(periodosAcademicos.estado, 'activo')];
   if (!isManager(input.auth)) conditions.push(eq(cursosProgramados.profesorPersonaId, input.auth.personaId));
   if (input.periodoId) conditions.push(eq(cursosProgramados.periodoAcademicoId, input.periodoId));
   const where = conditions.length ? and(...conditions) : undefined;
@@ -121,6 +126,7 @@ export async function listEvaluableCourses(
     join.orderBy(desc(periodosAcademicos.fechaInicio), asc(cursos.nombre))
       .limit(input.pageSize).offset((input.page - 1) * input.pageSize),
     db.select({ value: count() }).from(cursosProgramados)
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
       .leftJoin(actasAcademicas, eq(actasAcademicas.cursoProgramadoId, cursosProgramados.id))
       .where(where),
   ]);

@@ -4,7 +4,23 @@ import {
   carreras, cursoPrerrequisitos, cursos, cursosProgramados, matriculasCarrera,
   periodosAcademicos, planCursos, planesCurriculares,
 } from '../../db/schema/index.js';
-import { badRequest, notFound } from '../../shared/errors.js';
+import { badRequest, conflict, notFound } from '../../shared/errors.js';
+
+type AcademicPeriodState = 'programado' | 'activo' | 'culminado';
+
+export function assertAcademicPeriodTransition(
+  current: AcademicPeriodState,
+  next: AcademicPeriodState | undefined,
+  startDate: string,
+  today = new Date().toISOString().slice(0, 10),
+) {
+  if (!next || next === current) return;
+  if (current === 'activo' && next === 'programado' && startDate > today) return;
+  const allowed = current === 'programado'
+    ? next === 'activo' || next === 'culminado'
+    : current === 'activo' && next === 'culminado';
+  if (!allowed) throw conflict(`No se puede cambiar un periodo ${current} a ${next}`);
+}
 
 export function buildPlanCode(careerCode: string, version: string) {
   return `${careerCode.trim().toUpperCase()}-${version.trim().toUpperCase()}`.slice(0, 30);
@@ -196,13 +212,18 @@ export async function updateAcademicPeriod(
     periodo?: 'I' | 'II' | 'III' | undefined;
     fechaInicio?: string | undefined;
     fechaFin?: string | undefined;
-    estado?: 'activo' | 'culminado' | undefined;
+    estado?: 'programado' | 'activo' | 'culminado' | undefined;
     updatedBy: string;
   },
 ) {
   const [current] = await db.select().from(periodosAcademicos)
     .where(eq(periodosAcademicos.id, id)).limit(1);
   if (!current) throw notFound('Periodo académico no encontrado');
+  assertAcademicPeriodTransition(
+    current.estado,
+    data.estado,
+    data.fechaInicio ?? current.fechaInicio,
+  );
   const next = {
     carreraId: data.carreraId ?? current.carreraId,
     anio: data.anio ?? current.anio,

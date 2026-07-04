@@ -1,4 +1,4 @@
-import { and, desc, eq, SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, SQL } from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
 import {
   asistencias,
@@ -44,7 +44,7 @@ export async function createScheduledCourse(db: Database, input: ScheduledCourse
     .where(and(
       eq(planCursos.id, input.planCursoId),
       eq(planCursos.estado, 'activo'),
-      eq(periodosAcademicos.estado, 'activo'),
+      inArray(periodosAcademicos.estado, ['programado', 'activo']),
     )).limit(1);
   if (!context) throw notFound('Curso del plan o periodo académico activo no encontrado');
   if (context.planCareerId !== context.periodCareerId) {

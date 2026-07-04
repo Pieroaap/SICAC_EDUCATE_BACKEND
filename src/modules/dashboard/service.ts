@@ -20,23 +20,21 @@ type QuickAction = {
 const actionByRole: Record<string, QuickAction[]> = {
   ADMINISTRADOR_SISTEMA: [
     { key: 'personas', label: 'Gestionar personas', to: '/personas' },
-    { key: 'usuarios', label: 'Gestionar accesos', to: '/administracion/usuarios' },
-    { key: 'importaciones', label: 'Importar datos', to: '/administracion/importaciones' },
+    { key: 'usuarios', label: 'Gestionar accesos', to: '/personas' },
   ],
   DIRECTOR_ACADEMICO: [
     { key: 'personas', label: 'Consultar personas', to: '/personas' },
     { key: 'estructura', label: 'Estructura académica', to: '/estructura/carreras' },
     { key: 'excepciones', label: 'Resolver excepciones', to: '/operacion/excepciones' },
-    { key: 'egreso', label: 'Revisar egresos', to: '/egreso' },
   ],
   GESTOR_ACADEMICO: [
     { key: 'personas', label: 'Gestionar personas', to: '/personas' },
     { key: 'matriculas', label: 'Gestionar matrículas', to: '/operacion/matriculas' },
-    { key: 'cursos', label: 'Cursos programados', to: '/operacion/cursos' },
+    { key: 'cursos', label: 'Cursos programados', to: '/operacion/cursos-programados' },
     { key: 'talleres', label: 'Gestionar talleres', to: '/talleres' },
   ],
   PROFESOR: [
-    { key: 'mis-cursos', label: 'Ver mis cursos', to: '/docencia/cursos' },
+    { key: 'mis-cursos', label: 'Ver evaluaciones', to: '/evaluacion' },
   ],
 };
 
@@ -72,7 +70,12 @@ async function managerMetrics(db: Database) {
     db.select({ value: count() }).from(personas).where(eq(personas.estado, 'activo')),
     db.select({ value: count() }).from(usuariosAuth).where(eq(usuariosAuth.estadoAcceso, 'activo')),
     db.select({ value: count() }).from(matriculasCarrera).where(eq(matriculasCarrera.estado, 'activo')),
-    db.select({ value: count() }).from(cursosProgramados).where(eq(cursosProgramados.estado, 'activo')),
+    db.select({ value: count() }).from(cursosProgramados)
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
+      .where(and(
+        eq(cursosProgramados.estado, 'activo'),
+        eq(periodosAcademicos.estado, 'activo'),
+      )),
     db.select({ value: count() }).from(talleresProgramados)
       .where(inArray(talleresProgramados.estado, ['abierto', 'en_curso'])),
   ]);
@@ -95,15 +98,18 @@ async function professorMetrics(db: Database, professorId: string, periodId?: st
 
   const [[courses], [students]] = await Promise.all([
     db.select({ value: count() }).from(cursosProgramados)
-      .where(and(...courseConditions)),
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
+      .where(and(...courseConditions, eq(periodosAcademicos.estado, 'activo'))),
     db.select({ value: countDistinct(matriculaCursosProgramados.id) })
       .from(matriculaCursosProgramados)
       .innerJoin(
         cursosProgramados,
         eq(cursosProgramados.id, matriculaCursosProgramados.cursoProgramadoId),
       )
+      .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
       .where(and(
         ...courseConditions,
+        eq(periodosAcademicos.estado, 'activo'),
         eq(matriculaCursosProgramados.estado, 'activo'),
       )),
   ]);

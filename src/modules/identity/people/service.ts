@@ -144,6 +144,7 @@ export async function createPersonWithoutAccess(
           eq(planesCurriculares.carreraId, initialRegistration.carreraId),
           eq(planesCurriculares.estado, 'activo'),
           eq(periodosAcademicos.carreraId, initialRegistration.carreraId),
+          inArray(periodosAcademicos.estado, ['programado', 'activo']),
         ))
         .orderBy(desc(planesCurriculares.createdAt), desc(planesCurriculares.version))
         .limit(1);

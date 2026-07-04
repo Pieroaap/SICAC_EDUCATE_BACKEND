@@ -64,7 +64,7 @@ export const cursoPrerrequisitos = pgTable('curso_prerrequisitos', {
 ]);
 
 export const academicPeriodEnum = pgEnum('academic_period_number', ['I', 'II', 'III']);
-export const academicPeriodStateEnum = pgEnum('estado_periodo_academico', ['activo', 'culminado']);
+export const academicPeriodStateEnum = pgEnum('estado_periodo_academico', ['programado', 'activo', 'culminado']);
 
 export const periodosAcademicos = pgTable('periodos_academicos', {
   id: uuid('id').primaryKey().defaultRandom(),
