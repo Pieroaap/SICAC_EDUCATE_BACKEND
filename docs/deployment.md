@@ -39,3 +39,11 @@ automáticamente al iniciar.
 - `GET /health/ready` responde correctamente.
 - La documentación OpenAPI carga en `/documentacion`.
 - El frontend puede autenticarse sin errores CORS.
+
+## Secuencia de publicación
+
+1. Ejecutar las validaciones del backend.
+2. Publicar los cambios en `main`.
+3. Crear el Web Service y configurar las variables.
+4. Verificar el health check y OpenAPI.
+5. Añadir la URL final de Vercel a `CORS_ORIGINS`.
