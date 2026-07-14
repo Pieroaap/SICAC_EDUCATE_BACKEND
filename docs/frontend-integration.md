@@ -102,6 +102,18 @@ La carga inicial soportada utiliza:
 Se recomienda ejecutar primero con `dryRun: true` y luego con `dryRun: false`.
 La carga directa de un libro Excel no forma parte de la API publicada.
 
+## Contrato de requerimientos stakeholders
+
+- Escala vigente: A `15–20`, B `13–<15`, C `10.5–<13` y D `0–<10.5`; solo A/B aprueban. Actas e historial incluyen `escalaCodigo`; los registros anteriores conservan `legacy_11`.
+- `POST/GET /documentos`, `POST /documentos/:id/url-descarga` y `DELETE /documentos/:id` gestionan archivos privados. La URL firmada dura cinco minutos y no se persiste.
+- `GET/POST /cursos-programados/:id/muro`, `PATCH/DELETE /publicaciones-curso/:id` implementan el muro. Un adjunto debe pertenecer al mismo curso.
+- `GET /alumno/me/{inicio,cursos,notas,horario,historial,asistencia,talleres,documentos}` deriva siempre la persona del token y exige rol `ALUMNO`.
+- `GET /promociones/habilitaciones`, `POST /promociones/recalcular`, `GET /preinscripciones`, `POST /preinscripciones/:id/confirmar` y `PATCH /preinscripciones/:id/estado` están restringidos a roles gestores.
+- La confirmación revalida cupos y crea matrícula e inscripciones en una sola transacción; nunca cambia el estado operativo del alumno.
+- Cursos programados reciben `cupoMaximo` y `horarios`; componentes de evaluación reciben `tipo`, fechas y `estado`.
+
+La sección histórica de Corte 4 conserva la descripción de la escala anterior únicamente como antecedente. Para nuevos registros rige la escala versionada indicada arriba.
+
 ## CORS
 
 `CORS_ORIGINS` contiene los orígenes permitidos separados por comas. Para

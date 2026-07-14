@@ -6,3 +6,7 @@ export * from './evaluation.js';
 export * from './attendance.js';
 export * from './lifecycle.js';
 export * from './workshops.js';
+export * from './documents.js';
+export * from './course-wall.js';
+export * from './promotion.js';
+export * from './course-schedule.js';

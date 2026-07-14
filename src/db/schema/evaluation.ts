@@ -10,6 +10,7 @@ import { personas } from './identity.js';
 
 export const academicActStateEnum = pgEnum('estado_acta_academica', ['borrador', 'publicada']);
 export const academicResultEnum = pgEnum('resultado_academico', ['aprobado', 'desaprobado']);
+export const evaluationComponentStateEnum = pgEnum('estado_componente_evaluacion', ['programada', 'en_curso', 'cerrada']);
 
 export const componentesEvaluacion = pgTable('componentes_evaluacion', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -17,6 +18,10 @@ export const componentesEvaluacion = pgTable('componentes_evaluacion', {
   nombre: varchar('nombre', { length: 100 }).notNull(),
   porcentaje: numeric('porcentaje', { precision: 5, scale: 2 }).notNull(),
   orden: integer('orden').notNull(),
+  tipo: varchar('tipo', { length: 60 }),
+  fechaProgramada: timestamp('fecha_programada', { withTimezone: true }),
+  fechaLimite: timestamp('fecha_limite', { withTimezone: true }),
+  estado: evaluationComponentStateEnum('estado').notNull().default('programada'),
   ...auditColumns,
 }, (t) => [
   index('componentes_evaluacion_curso_idx').on(t.cursoProgramadoId),
@@ -46,6 +51,7 @@ export const actasAcademicas = pgTable('actas_academicas', {
   estado: academicActStateEnum('estado').notNull().default('borrador'),
   publicadaAt: timestamp('publicada_at', { withTimezone: true }),
   publicadaPor: uuid('publicada_por').references(() => personas.id, { onDelete: 'restrict' }),
+  escalaCodigo: varchar('escala_codigo', { length: 30 }).notNull().default('legacy_11'),
   ...auditColumns,
 }, (t) => [
   uniqueIndex('actas_academicas_curso_uq').on(t.cursoProgramadoId),
@@ -70,6 +76,7 @@ export const historialAcademico = pgTable('historial_academico', {
   notaFinal: numeric('nota_final', { precision: 5, scale: 2 }).notNull(),
   letra: varchar('letra', { length: 1 }).notNull(),
   resultado: academicResultEnum('resultado').notNull(),
+  escalaCodigo: varchar('escala_codigo', { length: 30 }).notNull().default('legacy_11'),
   ...auditColumns,
 }, (t) => [
   uniqueIndex('historial_academico_persona_curso_programado_uq')

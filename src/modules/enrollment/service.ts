@@ -1,12 +1,14 @@
 import { and, count, desc, eq, gte, inArray, lte, notInArray } from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
 import {
-  antecedentesAcademicos, autorizacionesPrerrequisito, calificaciones, carreras, componentesEvaluacion,
+  antecedentesAcademicos, autorizacionesPrerrequisito, carreras,
   cursoPrerrequisitos, cursosProgramados, matriculaCursosProgramados,
+  historialAcademico,
   inscripcionesCarrera, matriculasCarrera, perfilesAlumno, periodosAcademicos, personas,
   planCursos, planesCurriculares, cursos,
 } from '../../db/schema/index.js';
 import { badRequest, conflict, notFound } from '../../shared/errors.js';
+import { isPassingGrade } from '../evaluation/constants.js';
 
 type CareerEnrollmentInput = {
   personaId: string; carreraId: string; planCurricularId: string; periodoAcademicoId: string;
@@ -23,11 +25,12 @@ export function hasApprovedAttempt(
   for (const grade of grades) {
     attempts.set(grade.attemptId, [...(attempts.get(grade.attemptId) ?? []), grade]);
   }
-  return [...attempts.values()].some((attempt) =>
+  return [...attempts.values()].some((attempt) => isPassingGrade(
     attempt.reduce(
       (average, item) => average + Number(item.grade) * Number(item.componentWeight) / 100,
       0,
-    ) >= 11);
+    ),
+  ));
 }
 
 const periodOrder = { I: 1, II: 2, III: 3 } as const;
@@ -331,27 +334,13 @@ export async function enrollInScheduledCourse(db: Database, enrollmentId: string
     const prerequisites = await tx.select().from(cursoPrerrequisitos).where(eq(cursoPrerrequisitos.planCursoId, context.planCourse.id));
     if (prerequisites.length > 0) {
       const prerequisiteIds = prerequisites.map((p) => p.cursoPrerrequisitoId);
-      const grades = await tx.select({
-        prerequisiteId: cursosProgramados.planCursoId,
-        attemptId: matriculaCursosProgramados.id,
-        grade: calificaciones.nota,
-        componentWeight: componentesEvaluacion.porcentaje,
-      })
-        .from(matriculaCursosProgramados)
-        .innerJoin(matriculasCarrera, eq(matriculasCarrera.id, matriculaCursosProgramados.matriculaCarreraId))
-        .innerJoin(cursosProgramados, eq(cursosProgramados.id, matriculaCursosProgramados.cursoProgramadoId))
-        .innerJoin(calificaciones, eq(calificaciones.matriculaCursoProgramadoId, matriculaCursosProgramados.id))
-        .innerJoin(componentesEvaluacion, eq(componentesEvaluacion.id, calificaciones.componenteEvaluacionId))
-        .where(and(
-          eq(matriculasCarrera.personaId, context.enrollment.personaId),
-          eq(matriculasCarrera.planCurricularId, context.enrollment.planCurricularId),
-          inArray(cursosProgramados.planCursoId, prerequisiteIds),
+      const published = await tx.select({ id: historialAcademico.planCursoId })
+        .from(historialAcademico).where(and(
+          eq(historialAcademico.personaId, context.enrollment.personaId),
+          eq(historialAcademico.resultado, 'aprobado'),
+          inArray(historialAcademico.planCursoId, prerequisiteIds),
         ));
-      const approved = new Set<string>();
-      for (const prerequisiteId of prerequisiteIds) {
-        const rows = grades.filter((g) => g.prerequisiteId === prerequisiteId);
-        if (hasApprovedAttempt(rows)) approved.add(prerequisiteId);
-      }
+      const approved = new Set<string>(published.map((row) => row.id));
       const recognized = await tx.select({ id: antecedentesAcademicos.planCursoId })
         .from(antecedentesAcademicos).where(and(
           eq(antecedentesAcademicos.personaId, context.enrollment.personaId),

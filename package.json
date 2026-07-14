@@ -17,7 +17,8 @@
     "admin:bootstrap": "tsx --env-file=.env scripts/bootstrap-admin.ts",
     "admin:reset-password": "tsx --env-file=.env scripts/reset-admin-password.ts",
     "admin:verify": "tsx --env-file=.env scripts/verify-admin-login.ts",
-    "docs:validate": "tsx --env-file=.env scripts/validate-openapi.ts"
+    "docs:validate": "tsx --env-file=.env scripts/validate-openapi.ts",
+    "storage:setup": "tsx --env-file=.env scripts/setup-document-storage.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

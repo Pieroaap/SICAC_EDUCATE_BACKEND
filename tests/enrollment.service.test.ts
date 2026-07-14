@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { compareAcademicPeriods, hasApprovedAttempt } from '../src/modules/enrollment/service.js';
 
 describe('hasApprovedAttempt', () => {
-  it('aprueba cuando un intento individual alcanza nota 11', () => {
+  it('aprueba cuando un intento individual alcanza nota 13', () => {
     expect(hasApprovedAttempt([
-      { attemptId: 'intento-1', grade: 10, componentWeight: 100 },
-      { attemptId: 'intento-2', grade: 11, componentWeight: 100 },
+      { attemptId: 'intento-1', grade: 12.99, componentWeight: 100 },
+      { attemptId: 'intento-2', grade: 13, componentWeight: 100 },
     ])).toBe(true);
   });
 
@@ -18,7 +18,7 @@ describe('hasApprovedAttempt', () => {
 
   it('calcula el promedio ponderado dentro del mismo intento', () => {
     expect(hasApprovedAttempt([
-      { attemptId: 'intento-1', grade: 12, componentWeight: 40 },
+      { attemptId: 'intento-1', grade: 11.5, componentWeight: 40 },
       { attemptId: 'intento-1', grade: 14, componentWeight: 60 },
     ])).toBe(true);
   });

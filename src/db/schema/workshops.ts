@@ -5,6 +5,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { auditColumns } from './common.js';
 import { personas } from './identity.js';
+import { planesCurriculares } from './career-structure.js';
 
 export const workshopModalityEnum = pgEnum('modalidad_taller', ['presencial', 'virtual', 'hibrido']);
 export const scheduledWorkshopStateEnum = pgEnum('estado_taller_programado', [
@@ -16,6 +17,7 @@ export const workshopEnrollmentStateEnum = pgEnum('estado_inscripcion_taller', [
 export const weekdayEnum = pgEnum('dia_semana', [
   'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo',
 ]);
+export const planWorkshopCharacterEnum = pgEnum('caracter_taller_plan', ['obligatorio', 'electivo']);
 
 export const talleres = pgTable('talleres', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -24,6 +26,17 @@ export const talleres = pgTable('talleres', {
   descripcion: text('descripcion'),
   ...auditColumns,
 }, (t) => [uniqueIndex('talleres_codigo_uq').on(t.codigo)]);
+
+export const planTalleres = pgTable('plan_talleres', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  planCurricularId: uuid('plan_curricular_id').notNull().references(() => planesCurriculares.id, { onDelete: 'restrict' }),
+  tallerId: uuid('taller_id').notNull().references(() => talleres.id, { onDelete: 'restrict' }),
+  caracter: planWorkshopCharacterEnum('caracter').notNull(),
+  ...auditColumns,
+}, (t) => [
+  uniqueIndex('plan_talleres_plan_taller_uq').on(t.planCurricularId, t.tallerId),
+  index('plan_talleres_taller_idx').on(t.tallerId),
+]);
 
 export const talleresProgramados = pgTable('talleres_programados', {
   id: uuid('id').primaryKey().defaultRandom(),

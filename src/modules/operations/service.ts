@@ -20,6 +20,7 @@ import {
   roles,
   talleres,
   talleresProgramados,
+  horariosCursoProgramado,
 } from '../../db/schema/index.js';
 import { badRequest, conflict, notFound } from '../../shared/errors.js';
 
@@ -28,6 +29,11 @@ type ScheduledCourseInput = {
   periodoAcademicoId: string;
   profesorPersonaId: string;
   seccion: string;
+  cupoMaximo?: number | undefined;
+  horarios: Array<{
+    dia: 'lunes' | 'martes' | 'miercoles' | 'jueves' | 'viernes' | 'sabado' | 'domingo';
+    horaInicio: string; horaFin: string; modalidad: 'presencial' | 'virtual' | 'hibrido'; ubicacion: string;
+  }>;
   actorId: string;
 };
 
@@ -62,14 +68,21 @@ export async function createScheduledCourse(db: Database, input: ScheduledCourse
     )).limit(1);
   if (!professor) throw badRequest('La persona indicada no tiene el rol PROFESOR activo');
 
-  const [created] = await db.insert(cursosProgramados).values({
-    planCursoId: input.planCursoId,
-    periodoAcademicoId: input.periodoAcademicoId,
-    profesorPersonaId: input.profesorPersonaId,
-    seccion: input.seccion,
-    createdBy: input.actorId,
-  }).returning();
-  return created;
+  return db.transaction(async (tx) => {
+    const [created] = await tx.insert(cursosProgramados).values({
+      planCursoId: input.planCursoId,
+      periodoAcademicoId: input.periodoAcademicoId,
+      profesorPersonaId: input.profesorPersonaId,
+      seccion: input.seccion,
+      cupoMaximo: input.cupoMaximo,
+      createdBy: input.actorId,
+    }).returning();
+    if (!created) throw badRequest('No se pudo programar el curso');
+    if (input.horarios.length > 0) await tx.insert(horariosCursoProgramado).values(input.horarios.map((schedule) => ({
+      cursoProgramadoId: created.id, ...schedule, createdBy: input.actorId,
+    })));
+    return { ...created, horarios: input.horarios };
+  });
 }
 
 export async function updateScheduledCourse(
@@ -79,6 +92,8 @@ export async function updateScheduledCourse(
     profesorPersonaId?: string | undefined;
     seccion?: string | undefined;
     estado?: 'activo' | 'inactivo' | undefined;
+    cupoMaximo?: number | null | undefined;
+    horarios?: ScheduledCourseInput['horarios'] | undefined;
     actorId: string;
   },
 ) {
@@ -97,14 +112,23 @@ export async function updateScheduledCourse(
       )).limit(1);
     if (!professor) throw badRequest('La persona indicada no tiene el rol PROFESOR activo');
   }
-  const [updated] = await db.update(cursosProgramados).set({
-    profesorPersonaId: input.profesorPersonaId,
-    seccion: input.seccion,
-    estado: input.estado,
-    updatedAt: new Date(),
-    updatedBy: input.actorId,
-  }).where(eq(cursosProgramados.id, input.id)).returning();
-  return updated;
+  return db.transaction(async (tx) => {
+    const [updated] = await tx.update(cursosProgramados).set({
+      profesorPersonaId: input.profesorPersonaId,
+      seccion: input.seccion,
+      estado: input.estado,
+      cupoMaximo: input.cupoMaximo,
+      updatedAt: new Date(),
+      updatedBy: input.actorId,
+    }).where(eq(cursosProgramados.id, input.id)).returning();
+    if (input.horarios) {
+      await tx.delete(horariosCursoProgramado).where(eq(horariosCursoProgramado.cursoProgramadoId, input.id));
+      if (input.horarios.length > 0) await tx.insert(horariosCursoProgramado).values(input.horarios.map((schedule) => ({
+        cursoProgramadoId: input.id, ...schedule, createdBy: input.actorId,
+      })));
+    }
+    return { ...updated!, horarios: input.horarios };
+  });
 }
 
 export async function listScheduledCourses(
@@ -115,10 +139,11 @@ export async function listScheduledCourses(
   if (filters.periodoId) conditions.push(eq(cursosProgramados.periodoAcademicoId, filters.periodoId));
   if (filters.profesorId) conditions.push(eq(cursosProgramados.profesorPersonaId, filters.profesorId));
   if (filters.carreraId) conditions.push(eq(planesCurriculares.carreraId, filters.carreraId));
-  return db.select({
+  const rows = await db.select({
     id: cursosProgramados.id,
     seccion: cursosProgramados.seccion,
     estado: cursosProgramados.estado,
+    cupoMaximo: cursosProgramados.cupoMaximo,
     planCursoId: cursosProgramados.planCursoId,
     cursoId: cursos.id,
     cursoCodigo: cursos.codigo,
@@ -143,6 +168,11 @@ export async function listScheduledCourses(
     .innerJoin(personas, eq(personas.id, cursosProgramados.profesorPersonaId))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(periodosAcademicos.fechaInicio), cursos.nombre, cursosProgramados.seccion);
+  const ids = rows.map((row) => row.id);
+  const schedules = ids.length === 0 ? [] : await db.select().from(horariosCursoProgramado)
+    .where(inArray(horariosCursoProgramado.cursoProgramadoId, ids))
+    .orderBy(horariosCursoProgramado.dia, horariosCursoProgramado.horaInicio);
+  return rows.map((row) => ({ ...row, horarios: schedules.filter((item) => item.cursoProgramadoId === row.id) }));
 }
 
 export async function listCareerEnrollments(

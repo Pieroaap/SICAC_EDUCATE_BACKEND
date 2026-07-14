@@ -1,0 +1,2 @@
+ALTER TABLE "actas_academicas" ADD COLUMN "escala_codigo" varchar(30) DEFAULT 'legacy_11' NOT NULL;--> statement-breakpoint
+ALTER TABLE "historial_academico" ADD COLUMN "escala_codigo" varchar(30) DEFAULT 'legacy_11' NOT NULL;

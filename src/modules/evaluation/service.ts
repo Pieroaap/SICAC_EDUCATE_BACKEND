@@ -19,11 +19,13 @@ import {
 import type { Database } from '../../infrastructure/database/client.js';
 import { badRequest, conflict, forbidden, notFound } from '../../shared/errors.js';
 import type { AuthContext } from '../../types/fastify.js';
+import { recalculatePromotion } from '../promotion/service.js';
 import {
   assertGradeRange,
   calculateWeightedGrade,
+  classifyGrade,
+  CURRENT_GRADING_SCALE,
   gradeToLetter,
-  PASSING_GRADE,
 } from './constants.js';
 
 export { gradeToLetter } from './constants.js';
@@ -35,7 +37,11 @@ const MANAGER_ROLES = new Set([
 ]);
 
 type EvaluationAuth = Pick<AuthContext, 'personaId' | 'roles'>;
-type ComponentInput = { id?: string | undefined; nombre: string; porcentaje: number; orden: number };
+type ComponentInput = {
+  id?: string | undefined; nombre: string; porcentaje: number; orden: number;
+  tipo?: string | null | undefined; fechaProgramada?: string | null | undefined;
+  fechaLimite?: string | null | undefined; estado?: 'programada' | 'en_curso' | 'cerrada' | undefined;
+};
 type GradeInput = {
   componenteEvaluacionId: string;
   matriculaCursoProgramadoId: string;
@@ -234,6 +240,10 @@ export async function replaceEvaluationComponents(
           nombre: item.nombre,
           porcentaje: item.porcentaje.toFixed(2),
           orden: item.orden,
+          tipo: item.tipo,
+          fechaProgramada: item.fechaProgramada === null ? null : item.fechaProgramada ? new Date(item.fechaProgramada) : undefined,
+          fechaLimite: item.fechaLimite === null ? null : item.fechaLimite ? new Date(item.fechaLimite) : undefined,
+          estado: item.estado,
           updatedAt: new Date(),
           updatedBy: auth.personaId,
         }).where(and(
@@ -248,6 +258,10 @@ export async function replaceEvaluationComponents(
         nombre: item.nombre,
         porcentaje: item.porcentaje.toFixed(2),
         orden: item.orden,
+        tipo: item.tipo,
+        fechaProgramada: item.fechaProgramada ? new Date(item.fechaProgramada) : null,
+        fechaLimite: item.fechaLimite ? new Date(item.fechaLimite) : null,
+        estado: item.estado ?? 'programada',
         createdBy: auth.personaId,
       })));
     }
@@ -322,7 +336,7 @@ export async function publishAcademicAct(
   auth: EvaluationAuth,
 ) {
   await assertCourseAccess(db, courseId, auth);
-  return db.transaction(async (tx) => {
+  const publication = await db.transaction(async (tx) => {
     const database = tx as unknown as Database;
     const [context] = await tx.select({
       planCursoId: cursosProgramados.planCursoId,
@@ -362,11 +376,14 @@ export async function publishAcademicAct(
         grade: gradeByComponent.get(component.id)!,
         weight: Number(component.porcentaje),
       })));
+      const classification = classifyGrade(finalGrade);
       return {
         personaId: student.personaId,
         notaFinal: finalGrade,
-        letra: gradeToLetter(finalGrade),
-        resultado: finalGrade >= PASSING_GRADE ? 'aprobado' as const : 'desaprobado' as const,
+        letra: classification.code,
+        descripcion: classification.description,
+        escalaCodigo: classification.scaleCode,
+        resultado: classification.passed ? 'aprobado' as const : 'desaprobado' as const,
       };
     });
     for (const result of results) {
@@ -379,6 +396,7 @@ export async function publishAcademicAct(
         notaFinal: result.notaFinal.toFixed(2),
         letra: result.letra,
         resultado: result.resultado,
+        escalaCodigo: result.escalaCodigo,
         createdBy: auth.personaId,
       }).onConflictDoUpdate({
         target: [historialAcademico.personaId, historialAcademico.cursoProgramadoId],
@@ -387,6 +405,7 @@ export async function publishAcademicAct(
           notaFinal: result.notaFinal.toFixed(2),
           letra: result.letra,
           resultado: result.resultado,
+          escalaCodigo: result.escalaCodigo,
           updatedAt: new Date(),
           updatedBy: auth.personaId,
         },
@@ -396,6 +415,7 @@ export async function publishAcademicAct(
       estado: 'publicada',
       publicadaAt: new Date(),
       publicadaPor: auth.personaId,
+      escalaCodigo: CURRENT_GRADING_SCALE,
       updatedAt: new Date(),
       updatedBy: auth.personaId,
     }).where(and(eq(actasAcademicas.id, actId), eq(actasAcademicas.estado, 'borrador')))
@@ -403,6 +423,10 @@ export async function publishAcademicAct(
     if (!published) throw conflict('El acta ya fue publicada');
     return { acta: published, results };
   });
+  await Promise.allSettled(publication.results.map((result) => (
+    recalculatePromotion(db, result.personaId, auth.personaId)
+  )));
+  return publication;
 }
 
 export async function getAcademicAct(db: Database, courseId: string, auth: EvaluationAuth) {
@@ -419,6 +443,7 @@ export async function getAcademicAct(db: Database, courseId: string, auth: Evalu
     notaFinal: historialAcademico.notaFinal,
     letra: historialAcademico.letra,
     resultado: historialAcademico.resultado,
+    escalaCodigo: historialAcademico.escalaCodigo,
   }).from(historialAcademico)
     .innerJoin(personas, eq(personas.id, historialAcademico.personaId))
     .where(eq(historialAcademico.actaAcademicaId, act.id))
@@ -444,6 +469,7 @@ export async function listRegularAcademicHistory(
       notaFinal: historialAcademico.notaFinal,
       letra: historialAcademico.letra,
       resultado: historialAcademico.resultado,
+      escalaCodigo: historialAcademico.escalaCodigo,
       publicadaAt: actasAcademicas.publicadaAt,
     }).from(historialAcademico)
       .innerJoin(planCursos, eq(planCursos.id, historialAcademico.planCursoId))
@@ -495,6 +521,6 @@ export async function registerGrade(
   return {
     ...created,
     letter: gradeToLetter(input.nota),
-    passed: input.nota >= PASSING_GRADE,
+    passed: classifyGrade(input.nota).passed,
   };
 }

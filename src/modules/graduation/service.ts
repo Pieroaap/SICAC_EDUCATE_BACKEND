@@ -1,8 +1,8 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../../infrastructure/database/client.js';
 import {
-  calificaciones, componentesEvaluacion, cursosProgramados, egresados,
-  historialEstadosAcademicos, matriculaCursosProgramados, matriculasCarrera,
+  antecedentesAcademicos, egresados, historialAcademico,
+  historialEstadosAcademicos, matriculasCarrera,
   personasRoles, planCursos, roles,
 } from '../../db/schema/index.js';
 import { badRequest, forbidden, notFound } from '../../shared/errors.js';
@@ -13,25 +13,17 @@ export async function calculateGraduationEligibility(db: Database, enrollmentId:
   const required = await db.select({ id: planCursos.id }).from(planCursos)
     .where(and(eq(planCursos.planCurricularId, enrollment.planCurricularId), eq(planCursos.estado, 'activo')));
   const requiredIds = required.map((item) => item.id);
-  const grades = requiredIds.length === 0 ? [] : await db.select({
-    planCourseId: cursosProgramados.planCursoId,
-    attemptId: matriculaCursosProgramados.id,
-    grade: calificaciones.nota,
-    weight: componentesEvaluacion.porcentaje,
-  }).from(matriculaCursosProgramados)
-    .innerJoin(cursosProgramados, eq(cursosProgramados.id, matriculaCursosProgramados.cursoProgramadoId))
-    .innerJoin(calificaciones, eq(calificaciones.matriculaCursoProgramadoId, matriculaCursosProgramados.id))
-    .innerJoin(componentesEvaluacion, eq(componentesEvaluacion.id, calificaciones.componenteEvaluacionId))
-    .where(and(eq(matriculaCursosProgramados.matriculaCarreraId, enrollmentId), inArray(cursosProgramados.planCursoId, requiredIds)));
-  const approved = requiredIds.filter((courseId) => {
-    const attempts = new Map<string, typeof grades>();
-    for (const grade of grades.filter((item) => item.planCourseId === courseId)) {
-      attempts.set(grade.attemptId, [...(attempts.get(grade.attemptId) ?? []), grade]);
-    }
-    return [...attempts.values()].some((items) =>
-      items.reduce((sum, item) => sum + Number(item.grade) * Number(item.weight) / 100, 0) >= 11);
-  });
-  return { eligible: requiredIds.length > 0 && approved.length === requiredIds.length, required: requiredIds.length, approved: approved.length };
+  const [published, recognized] = requiredIds.length === 0 ? [[], []] : await Promise.all([
+    db.select({ id: historialAcademico.planCursoId }).from(historialAcademico).where(and(
+      eq(historialAcademico.personaId, enrollment.personaId), eq(historialAcademico.resultado, 'aprobado'),
+      inArray(historialAcademico.planCursoId, requiredIds),
+    )),
+    db.select({ id: antecedentesAcademicos.planCursoId }).from(antecedentesAcademicos).where(and(
+      eq(antecedentesAcademicos.personaId, enrollment.personaId), inArray(antecedentesAcademicos.planCursoId, requiredIds),
+    )),
+  ]);
+  const approved = new Set([...published, ...recognized].map((row) => row.id));
+  return { eligible: requiredIds.length > 0 && approved.size === requiredIds.length, required: requiredIds.length, approved: approved.size };
 }
 
 export async function approveGraduation(
