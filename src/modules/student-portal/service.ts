@@ -6,6 +6,26 @@ import {
   planCursos, talleresProgramados,
 } from '../../db/schema/index.js';
 import type { Database } from '../../infrastructure/database/client.js';
+import { notFound } from '../../shared/errors.js';
+
+type StudentCourseRow = {
+  matriculaCursoId: string;
+  cursoProgramadoId: string;
+  cursoCodigo: string;
+  cursoNombre: string;
+  ciclo: number;
+  carreraId: string;
+  carreraNombre: string;
+  periodoId: string;
+  periodoNombre: string;
+  periodoEstado: string;
+  estado: string;
+};
+
+export function requireStudentCourse<T extends StudentCourseRow>(course: T | undefined): T {
+  if (!course) throw notFound('Curso no encontrado');
+  return course;
+}
 
 export async function getStudentPortalData(db: Database, personaId: string) {
   const courseRows = await db.select({
@@ -97,5 +117,95 @@ export async function getStudentPortalData(db: Database, personaId: string) {
       horarios: workshopSchedules.filter((item) => item.tallerProgramadoId === workshop.tallerProgramadoId),
     })),
     documentos: documentRows,
+  };
+}
+
+export async function getStudentCourseData(db: Database, personaId: string, courseId: string) {
+  const [courseRow] = await db.select({
+    matriculaCursoId: matriculaCursosProgramados.id,
+    cursoProgramadoId: cursosProgramados.id,
+    cursoCodigo: cursos.codigo,
+    cursoNombre: cursos.nombre,
+    ciclo: planCursos.ciclo,
+    carreraId: carreras.id,
+    carreraNombre: carreras.nombre,
+    periodoId: periodosAcademicos.id,
+    periodoNombre: periodosAcademicos.nombre,
+    periodoEstado: periodosAcademicos.estado,
+    estado: matriculaCursosProgramados.estado,
+  }).from(matriculaCursosProgramados)
+    .innerJoin(matriculasCarrera, eq(matriculasCarrera.id, matriculaCursosProgramados.matriculaCarreraId))
+    .innerJoin(cursosProgramados, eq(cursosProgramados.id, matriculaCursosProgramados.cursoProgramadoId))
+    .innerJoin(planCursos, eq(planCursos.id, cursosProgramados.planCursoId))
+    .innerJoin(cursos, eq(cursos.id, planCursos.cursoId))
+    .innerJoin(carreras, eq(carreras.id, matriculasCarrera.carreraId))
+    .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
+    .where(and(
+      eq(matriculasCarrera.personaId, personaId),
+      eq(cursosProgramados.id, courseId),
+    ));
+
+  const course = requireStudentCourse(courseRow);
+  const [schedules, assessments, attendance, documentRows, finalResults] = await Promise.all([
+    db.select().from(horariosCursoProgramado)
+      .where(eq(horariosCursoProgramado.cursoProgramadoId, courseId)),
+    db.select({
+      id: componentesEvaluacion.id,
+      nombre: componentesEvaluacion.nombre,
+      porcentaje: componentesEvaluacion.porcentaje,
+      orden: componentesEvaluacion.orden,
+      tipo: componentesEvaluacion.tipo,
+      fechaProgramada: componentesEvaluacion.fechaProgramada,
+      fechaLimite: componentesEvaluacion.fechaLimite,
+      estado: componentesEvaluacion.estado,
+    }).from(componentesEvaluacion)
+      .where(eq(componentesEvaluacion.cursoProgramadoId, courseId))
+      .orderBy(componentesEvaluacion.orden),
+    db.select({
+      id: asistencias.id,
+      fecha: asistencias.fecha,
+      estado: asistencias.estadoAsistencia,
+    }).from(asistencias)
+      .where(and(
+        eq(asistencias.matriculaCursoProgramadoId, course.matriculaCursoId),
+        eq(asistencias.cursoProgramadoId, courseId),
+      ))
+      .orderBy(desc(asistencias.fecha)),
+    db.select({
+      id: documentos.id,
+      nombreOriginal: documentos.nombreOriginal,
+      mimeType: documentos.mimeType,
+      tamanoBytes: documentos.tamanoBytes,
+      tipo: documentos.tipo,
+      ambito: documentos.ambito,
+      createdAt: documentos.createdAt,
+    }).from(documentos)
+      .where(and(
+        eq(documentos.estado, 'activo'),
+        or(
+          eq(documentos.ambito, 'INSTITUCION'),
+          and(eq(documentos.ambito, 'CURSO_PROGRAMADO'), eq(documentos.cursoProgramadoId, courseId)),
+        ),
+      ))
+      .orderBy(desc(documentos.createdAt)),
+    db.select({
+      id: historialAcademico.id,
+      notaFinal: historialAcademico.notaFinal,
+      letra: historialAcademico.letra,
+      resultado: historialAcademico.resultado,
+      escalaCodigo: historialAcademico.escalaCodigo,
+    }).from(historialAcademico)
+      .where(and(
+        eq(historialAcademico.personaId, personaId),
+        eq(historialAcademico.cursoProgramadoId, courseId),
+      )),
+  ]);
+
+  return {
+    course: { ...course, horarios: schedules },
+    assessments,
+    attendance,
+    documents: documentRows,
+    finalResult: finalResults[0] ?? null,
   };
 }

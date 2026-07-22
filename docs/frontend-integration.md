@@ -108,6 +108,8 @@ La carga directa de un libro Excel no forma parte de la API publicada.
 - `POST/GET /documentos`, `POST /documentos/:id/url-descarga` y `DELETE /documentos/:id` gestionan archivos privados. La URL firmada dura cinco minutos y no se persiste.
 - `GET/POST /cursos-programados/:id/muro`, `PATCH/DELETE /publicaciones-curso/:id` implementan el muro. Un adjunto debe pertenecer al mismo curso.
 - `GET /alumno/me/{inicio,cursos,notas,horario,historial,asistencia,talleres,documentos}` deriva siempre la persona del token y exige rol `ALUMNO`.
+- `GET /alumno/me/cursos/:courseId` devuelve el espacio contextual del curso: datos, horarios, evaluaciones, resultado final publicado, asistencia y documentos. El backend valida que el alumno autenticado esté matriculado y responde `404` sin revelar cursos ajenos.
+- El inicio del portal consume únicamente agenda, cursos y talleres. Historial vive en una vista propia; asistencia y documentos se presentan dentro del curso programado.
 - `GET /promociones/habilitaciones`, `POST /promociones/recalcular`, `GET /preinscripciones`, `POST /preinscripciones/:id/confirmar` y `PATCH /preinscripciones/:id/estado` están restringidos a roles gestores.
 - La confirmación revalida cupos y crea matrícula e inscripciones en una sola transacción; nunca cambia el estado operativo del alumno.
 - Cursos programados reciben `cupoMaximo` y `horarios`; componentes de evaluación reciben `tipo`, fechas y `estado`.
