@@ -2,8 +2,8 @@ import {
   and, asc, count, desc, eq, inArray,
 } from 'drizzle-orm';
 import {
-  cursosProgramados, documentos, matriculaCursosProgramados, matriculasCarrera, periodosAcademicos,
-  personas, publicacionesCurso, publicacionesDocumentos,
+  cursos, cursosProgramados, documentos, matriculaCursosProgramados, matriculasCarrera, periodosAcademicos,
+  personas, planCursos, publicacionesCurso, publicacionesDocumentos,
 } from '../../db/schema/index.js';
 import type { Database } from '../../infrastructure/database/client.js';
 import { badRequest, forbidden, notFound } from '../../shared/errors.js';
@@ -21,9 +21,13 @@ export async function assertCourseWallAccess(
 ) {
   const [course] = await db.select({
     id: cursosProgramados.id,
+    code: cursos.codigo,
+    name: cursos.nombre,
     professorId: cursosProgramados.profesorPersonaId,
     periodState: periodosAcademicos.estado,
   }).from(cursosProgramados)
+    .innerJoin(planCursos, eq(planCursos.id, cursosProgramados.planCursoId))
+    .innerJoin(cursos, eq(cursos.id, planCursos.cursoId))
     .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
     .where(eq(cursosProgramados.id, courseId)).limit(1);
   if (!course) throw notFound('Curso programado no encontrado');
@@ -51,7 +55,7 @@ export async function listCoursePosts(
   courseId: string,
   input: { auth: WallAuth; page: number; pageSize: number },
 ) {
-  await assertCourseWallAccess(db, courseId, input.auth);
+  const course = await assertCourseWallAccess(db, courseId, input.auth);
   const where = and(eq(publicacionesCurso.cursoProgramadoId, courseId), eq(publicacionesCurso.estado, 'activa'));
   const [posts, totalRows] = await Promise.all([
     db.select({
@@ -86,6 +90,7 @@ export async function listCoursePosts(
     .orderBy(asc(documentos.nombreOriginal));
   const total = Number(totalRows[0]?.value ?? 0);
   return {
+    course: { id: course.id, code: course.code, name: course.name },
     data: posts.map((post) => ({ ...post, archivos: attachments.filter((item) => item.publicacionId === post.id) })),
     pagination: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) },
   };
