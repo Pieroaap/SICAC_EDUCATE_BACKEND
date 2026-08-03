@@ -692,28 +692,38 @@ export async function updateTeacherRoleStatus(
   estado: NonNullable<typeof personasRoles.$inferInsert.estado>,
   actorId: string,
 ) {
-  const [assignment] = await db.select({
-    personaId: personasRoles.personaId,
-    rolId: personasRoles.rolId,
-    fechaInicio: personasRoles.fechaInicio,
-  }).from(personasRoles)
-    .innerJoin(roles, eq(roles.id, personasRoles.rolId))
-    .where(and(eq(personasRoles.personaId, personId), eq(roles.codigo, 'PROFESOR')))
-    .orderBy(desc(personasRoles.fechaInicio))
-    .limit(1);
-  if (!assignment) throw notFound('La persona no tiene rol PROFESOR');
-
-  const [updated] = await db.update(personasRoles).set({
-    estado,
-    updatedAt: new Date(),
-    updatedBy: actorId,
-  }).where(and(
-    eq(personasRoles.personaId, assignment.personaId),
-    eq(personasRoles.rolId, assignment.rolId),
-    eq(personasRoles.fechaInicio, assignment.fechaInicio),
-  )).returning();
-  if (!updated) throw notFound('La asignación de profesor no fue encontrada');
-  return updated;
+  if (estado === 'inactivo') {
+    return deactivatePersonRole(db, { personId, role: 'PROFESOR', actorId });
+  }
+  return db.transaction(async (tx) => {
+    await lockPersonRoleAssignments(tx, personId);
+    const [teacherRole] = await tx.select({ id: roles.id }).from(roles)
+      .where(and(eq(roles.codigo, 'PROFESOR'), eq(roles.estado, 'activo'))).limit(1);
+    if (!teacherRole) throw notFound('El rol PROFESOR no existe o está inactivo');
+    const assignments = await tx.select({
+      personaId: personasRoles.personaId,
+      rolId: personasRoles.rolId,
+      fechaInicio: personasRoles.fechaInicio,
+      estado: personasRoles.estado,
+    }).from(personasRoles).where(and(
+      eq(personasRoles.personaId, personId),
+      eq(personasRoles.rolId, teacherRole.id),
+    )).orderBy(desc(personasRoles.fechaInicio));
+    const active = assignments.find((assignment) => assignment.estado === 'activo');
+    if (active) return active;
+    const inactive = assignments.find((assignment) => assignment.estado === 'inactivo');
+    if (!inactive) throw notFound('La persona no tiene rol PROFESOR');
+    const [updated] = await tx.update(personasRoles).set({
+      estado: 'activo', fechaFin: null, updatedAt: new Date(), updatedBy: actorId,
+    }).where(and(
+      eq(personasRoles.personaId, inactive.personaId),
+      eq(personasRoles.rolId, inactive.rolId),
+      eq(personasRoles.fechaInicio, inactive.fechaInicio),
+      eq(personasRoles.estado, 'inactivo'),
+    )).returning();
+    if (!updated) throw conflict('La asignación de profesor cambió durante la operación');
+    return updated;
+  });
 }
 
 export type TeacherImportRow = {
@@ -757,6 +767,9 @@ export async function importTeachers(
     };
   });
   const valid = parsed.filter((item) => item.value).map((item) => item.value!);
+  if (!dryRun && valid.some((item) => item.estado === 'inactivo')) {
+    throw badRequest('La importación de profesores no puede inactivar roles; use la baja segura de roles');
+  }
   const documents = valid.map((item) => item.dni);
   const existing = documents.length === 0 ? [] : await db.select({
     document: personas.numeroDocumento,

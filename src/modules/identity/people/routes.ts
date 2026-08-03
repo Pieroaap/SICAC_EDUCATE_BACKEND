@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authorize } from '../../../infrastructure/http/authorize.js';
+import { assertTeacherRoleStatusChangeAuthorized } from './role-lifecycle.js';
 import {
   assignStudentGuardian,
   assignPersonRole,
@@ -293,6 +294,7 @@ const studentProfileBody = z.object({
   }, async (request) => {
     const params = z.object({ personaId: z.string().uuid() }).parse(request.params);
     const body = z.object({ estado: z.enum(['activo', 'inactivo']) }).parse(request.body);
+    assertTeacherRoleStatusChangeAuthorized(body.estado, request.auth!.roles);
     return updateTeacherRoleStatus(app.db, params.personaId, body.estado, request.auth!.personaId);
   });
 

@@ -45,6 +45,15 @@ export function assertDestinationCanBeActivated(isAlreadyActive: boolean): void 
   if (isAlreadyActive) throw conflict('La persona ya tiene este rol activo');
 }
 
+export function assertTeacherRoleStatusChangeAuthorized(
+  requestedState: 'activo' | 'inactivo',
+  actorRoles: string[],
+): void {
+  if (requestedState === 'inactivo' && !actorRoles.includes('ADMINISTRADOR_SISTEMA')) {
+    throw forbidden('Solo ADMINISTRADOR_SISTEMA puede inactivar el rol PROFESOR');
+  }
+}
+
 export async function runRoleReplacement<T>(
   activateDestination: () => Promise<void>,
   deactivateOrigin: () => Promise<T>,

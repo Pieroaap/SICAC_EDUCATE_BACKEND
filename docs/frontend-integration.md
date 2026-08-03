@@ -140,6 +140,7 @@ La inscripción permanente y la matrícula periódica son recursos distintos:
 - `POST /personas/:id/roles` permite al Administrador agregar roles; `ALUMNO` exige datos de perfil e inscripción.
 - `PATCH /personas/:id/roles/:role` con `{ estado: "inactivo" }` inactiva una asignación sin borrar su historial. Solo Administrador del Sistema; la persona debe conservar otro rol activo y no se permite retirar el último administrador ni el propio rol administrativo.
 - `POST /personas/:id/roles/cambiar` recibe `{ fromRole, toRole, student? }` y activa o reactiva primero el destino para después cerrar el origen dentro de una sola transacción. Si el destino es `ALUMNO`, `student` reutiliza la validación de perfil, carrera, periodo y plan; no crea un perfil ni una inscripción activos duplicados.
+- `PATCH /profesores/:personaId` conserva la activación para los roles gestores, pero la inactivación solo admite Administrador del Sistema y aplica el mismo cierre seguro del rol. La importación de profesores no inactiva roles; para esa transición se usa la baja segura.
 - La asignación de tutor usa fecha automática del backend.
 - El listado de excepciones admite solo Administrador y Director; la resolución sigue exclusiva de Dirección.
 
