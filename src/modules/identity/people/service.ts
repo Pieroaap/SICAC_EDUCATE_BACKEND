@@ -407,6 +407,7 @@ export async function replacePersonRole(
     assertDestinationCanBeActivated(destinationAssignments.some((assignment) => assignment.estado === 'activo'));
 
     return runRoleReplacement(
+      async (work) => work(),
       async () => {
         let startDate = new Date().toISOString().slice(0, 10);
         if (input.toRole === 'ALUMNO') {

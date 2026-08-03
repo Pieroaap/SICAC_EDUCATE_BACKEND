@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { readFileSync } from 'node:fs';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { AppError } from '../src/shared/errors.js';
 import {
   assertDestinationCanBeActivated,
@@ -8,9 +9,11 @@ import {
   assertReplacementAllowed,
   assertTeacherRoleStatusChangeAuthorized,
   runRoleReplacement,
+  selectRoleAssignmentToKeep,
 } from '../src/modules/identity/people/role-lifecycle.js';
 import { importTeachers } from '../src/modules/identity/people/service.js';
 import { registerPeopleRoutes } from '../src/modules/identity/people/routes.js';
+import { personasRoles } from '../src/db/schema/identity.js';
 
 const context = {
   personId: 'persona-1', actorId: 'admin-2', role: 'PROFESOR' as const,
@@ -53,6 +56,7 @@ describe('ciclo de vida de roles', () => {
   it('sustituye de forma ordenada: destino antes que origen', async () => {
     const events: string[] = [];
     const result = await runRoleReplacement(
+      async (work) => work(),
       async () => { events.push('destino'); },
       async () => { events.push('origen'); return 'ok'; },
     );
@@ -60,21 +64,47 @@ describe('ciclo de vida de roles', () => {
     expect(events).toEqual(['destino', 'origen']);
   });
 
-  it('no retira el origen si falla activar el destino', async () => {
-    const events: string[] = [];
+  it('revierte el destino si falla el cierre del origen dentro de la transacción', async () => {
+    let state = { origin: 'activo', destination: 'inactivo' };
+    const transaction = async <Result>(work: () => Promise<Result>): Promise<Result> => {
+      const snapshot = structuredClone(state);
+      try {
+        return await work();
+      } catch (error) {
+        state = snapshot;
+        throw error;
+      }
+    };
     await expect(runRoleReplacement(
-      async () => { events.push('destino'); throw new Error('fallo destino'); },
-      async () => { events.push('origen'); },
-    )).rejects.toThrow('fallo destino');
-    expect(events).toEqual(['destino']);
+      transaction,
+      async () => { state.destination = 'activo'; },
+      async () => { state.origin = 'inactivo'; throw new Error('fallo al cerrar origen'); },
+    )).rejects.toThrow('fallo al cerrar origen');
+    expect(state).toEqual({ origin: 'activo', destination: 'inactivo' });
   });
 
   it('rechaza una asignación activa duplicada', () => {
     expectDomainError(() => assertDestinationCanBeActivated(true), 409);
   });
 
-  it('declara una restricción parcial y un saneamiento determinista de duplicados', () => {
+  it('elige determinísticamente la asignación más reciente para conservar', () => {
+    const base = {
+      fechaInicio: '2026-01-01', updatedAt: new Date('2026-01-02T00:00:00Z'), createdAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const retained = selectRoleAssignmentToKeep([
+      { ...base, tieBreaker: '(0,1)' },
+      { ...base, tieBreaker: '(0,2)' },
+      { ...base, fechaInicio: '2025-12-31', tieBreaker: '(9,9)' },
+    ]);
+    expect(retained?.tieBreaker).toBe('(0,2)');
+  });
+
+  it('declara la restricción parcial y el saneamiento determinista en esquema y migración', () => {
     const migration = readFileSync(new URL('../drizzle/0019_role-lifecycle-integrity.sql', import.meta.url), 'utf8');
+    const table = getTableConfig(personasRoles);
+    const index = table.indexes.find((item) => item.config.name === 'personas_roles_activa_uq');
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.where).toBeDefined();
     expect(migration).toContain('row_number() OVER');
     expect(migration).toContain('ORDER BY fecha_inicio DESC, updated_at DESC, created_at DESC, ctid DESC');
     expect(migration).toContain('CREATE UNIQUE INDEX "personas_roles_activa_uq"');
