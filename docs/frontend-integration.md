@@ -138,6 +138,8 @@ La inscripción permanente y la matrícula periódica son recursos distintos:
 - Crear una persona `ALUMNO` exige `initialRegistration` con `carreraId` y `periodoInicioId`.
 - El backend resuelve el plan activo más reciente y deriva el periodo de ingreso.
 - `POST /personas/:id/roles` permite al Administrador agregar roles; `ALUMNO` exige datos de perfil e inscripción.
+- `PATCH /personas/:id/roles/:role` con `{ estado: "inactivo" }` inactiva una asignación sin borrar su historial. Solo Administrador del Sistema; la persona debe conservar otro rol activo y no se permite retirar el último administrador ni el propio rol administrativo.
+- `POST /personas/:id/roles/cambiar` recibe `{ fromRole, toRole, student? }` y activa o reactiva primero el destino para después cerrar el origen dentro de una sola transacción. Si el destino es `ALUMNO`, `student` reutiliza la validación de perfil, carrera, periodo y plan; no crea un perfil ni una inscripción activos duplicados.
 - La asignación de tutor usa fecha automática del backend.
 - El listado de excepciones admite solo Administrador y Director; la resolución sigue exclusiva de Dirección.
 
