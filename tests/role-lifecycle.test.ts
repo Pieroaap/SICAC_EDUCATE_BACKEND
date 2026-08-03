@@ -8,10 +8,8 @@ import {
   assertDirectRoleRemovalAllowed,
   assertReplacementAllowed,
   assertTeacherRoleStatusChangeAuthorized,
-  runRoleReplacement,
-  selectRoleAssignmentToKeep,
 } from '../src/modules/identity/people/role-lifecycle.js';
-import { importTeachers } from '../src/modules/identity/people/service.js';
+import { importTeachers, replacePersonRole } from '../src/modules/identity/people/service.js';
 import { registerPeopleRoutes } from '../src/modules/identity/people/routes.js';
 import { personasRoles } from '../src/db/schema/identity.js';
 
@@ -53,50 +51,69 @@ describe('ciclo de vida de roles', () => {
     }), 409);
   });
 
-  it('sustituye de forma ordenada: destino antes que origen', async () => {
-    const events: string[] = [];
-    const result = await runRoleReplacement(
-      async (work) => work(),
-      async () => { events.push('destino'); },
-      async () => { events.push('origen'); return 'ok'; },
-    );
-    expect(result).toBe('ok');
-    expect(events).toEqual(['destino', 'origen']);
-  });
-
-  it('revierte el destino si falla el cierre del origen dentro de la transacción', async () => {
+  it('replacePersonRole revierte destino y origen si falla el cierre dentro de db.transaction', async () => {
     let state = { origin: 'activo', destination: 'inactivo' };
-    const transaction = async <Result>(work: () => Promise<Result>): Promise<Result> => {
-      const snapshot = structuredClone(state);
-      try {
-        return await work();
-      } catch (error) {
-        state = snapshot;
-        throw error;
-      }
+    let transactions = 0;
+    const rows = [
+      [{ personaId: 'persona-id', rolId: 'rol-profesor', fechaInicio: '2026-01-01' }],
+      [{ id: 'rol-gestor' }],
+      [],
+    ];
+    const select = () => {
+      const result = rows.shift() ?? [];
+      const query = {
+        from: () => query,
+        innerJoin: () => query,
+        where: () => query,
+        orderBy: () => query,
+        limit: async () => result,
+        then: <Result>(resolve: (value: unknown) => Result) => Promise.resolve(result).then(resolve),
+      };
+      return query;
     };
-    await expect(runRoleReplacement(
-      transaction,
-      async () => { state.destination = 'activo'; },
-      async () => { state.origin = 'inactivo'; throw new Error('fallo al cerrar origen'); },
-    )).rejects.toThrow('fallo al cerrar origen');
+    const database = {
+      transaction: async (work: (tx: unknown) => Promise<unknown>) => {
+        transactions += 1;
+        const snapshot = structuredClone(state);
+        try {
+          return await work(database);
+        } catch (error) {
+          state = snapshot;
+          throw error;
+        }
+      },
+      execute: async () => undefined,
+      select,
+      insert: () => ({
+        values: () => ({
+          onConflictDoNothing: () => ({
+            returning: async () => {
+              state.destination = 'activo';
+              return [{ personaId: 'persona-id', rolId: 'rol-gestor' }];
+            },
+          }),
+        }),
+      }),
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => {
+              state.origin = 'inactivo';
+              return [];
+            },
+          }),
+        }),
+      }),
+    };
+    await expect(replacePersonRole(database as never, {
+      personId: 'persona-id', fromRole: 'PROFESOR', toRole: 'GESTOR_ACADEMICO', actorId: 'actor-id',
+    })).rejects.toMatchObject({ statusCode: 409 });
+    expect(transactions).toBe(1);
     expect(state).toEqual({ origin: 'activo', destination: 'inactivo' });
   });
 
   it('rechaza una asignación activa duplicada', () => {
     expectDomainError(() => assertDestinationCanBeActivated(true), 409);
-  });
-
-  it('elige determinísticamente la asignación más reciente para conservar', () => {
-    const base = {
-      fechaInicio: '2026-01-01', updatedAt: new Date('2026-01-02T00:00:00Z'), createdAt: new Date('2026-01-01T00:00:00Z'),
-    };
-    const retained = selectRoleAssignmentToKeep([
-      { ...base, tieBreaker: '(0,1)' },
-      { ...base, tieBreaker: '(0,2)' },
-      { ...base, fechaInicio: '2025-12-31', tieBreaker: '(9,9)' },
-    ]);
-    expect(retained?.tieBreaker).toBe('(0,2)');
   });
 
   it('declara la restricción parcial y el saneamiento determinista en esquema y migración', () => {
@@ -105,10 +122,9 @@ describe('ciclo de vida de roles', () => {
     const index = table.indexes.find((item) => item.config.name === 'personas_roles_activa_uq');
     expect(index?.config.unique).toBe(true);
     expect(index?.config.where).toBeDefined();
-    expect(migration).toContain('row_number() OVER');
-    expect(migration).toContain('ORDER BY fecha_inicio DESC, updated_at DESC, created_at DESC, ctid DESC');
-    expect(migration).toContain('CREATE UNIQUE INDEX "personas_roles_activa_uq"');
-    expect(migration).toContain('WHERE "estado" = \'activo\'');
+    expect(migration).toMatch(/row_number\(\) OVER \(\s*PARTITION BY persona_id, rol_id\s*ORDER BY fecha_inicio DESC, updated_at DESC, created_at DESC, ctid DESC\s*\)/m);
+    expect(migration).toMatch(/SET\s*estado = 'inactivo',\s*fecha_fin = COALESCE\(asignacion\.fecha_fin, CURRENT_DATE\),\s*updated_at = NOW\(\)/m);
+    expect(migration).toMatch(/CREATE UNIQUE INDEX "personas_roles_activa_uq"\s*ON "personas_roles" USING btree \("persona_id", "rol_id"\)\s*WHERE "estado" = 'activo';/m);
   });
 
   it('solo permite a Administrador inactivar Profesor desde la ruta compatible', () => {

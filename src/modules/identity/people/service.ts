@@ -31,7 +31,6 @@ import {
   assertDestinationCanBeActivated,
   assertDirectRoleRemovalAllowed,
   assertReplacementAllowed,
-  runRoleReplacement,
   type SystemRole,
 } from './role-lifecycle.js';
 
@@ -406,39 +405,32 @@ export async function replacePersonRole(
     )).orderBy(desc(personasRoles.fechaInicio));
     assertDestinationCanBeActivated(destinationAssignments.some((assignment) => assignment.estado === 'activo'));
 
-    return runRoleReplacement(
-      async (work) => work(),
-      async () => {
-        let startDate = new Date().toISOString().slice(0, 10);
-        if (input.toRole === 'ALUMNO') {
-          startDate = await ensureStudentRoleData(tx, input.personId, input.student, input.actorId);
-        }
-        const inactive = destinationAssignments.find((assignment) => assignment.estado === 'inactivo');
-        if (inactive) {
-          await tx.update(personasRoles).set({
-            estado: 'activo', fechaFin: null, updatedAt: new Date(), updatedBy: input.actorId,
-          }).where(and(
-            eq(personasRoles.personaId, input.personId),
-            eq(personasRoles.rolId, destinationRole.id),
-            eq(personasRoles.fechaInicio, inactive.fechaInicio),
-          ));
-        } else {
-          const [created] = await tx.insert(personasRoles).values({
-            personaId: input.personId, rolId: destinationRole.id, fechaInicio: startDate, createdBy: input.actorId,
-          }).onConflictDoNothing().returning();
-          if (!created) throw conflict('La persona ya tiene este rol activo');
-        }
-      },
-      async () => {
-        assertReplacementAllowed({
-          personId: input.personId,
-          actorId: input.actorId,
-          role: input.fromRole,
-          activeAdministratorCount,
-        });
-        return closeRoleAssignment(tx, origin, input.actorId);
-      },
-    );
+    let startDate = new Date().toISOString().slice(0, 10);
+    if (input.toRole === 'ALUMNO') {
+      startDate = await ensureStudentRoleData(tx, input.personId, input.student, input.actorId);
+    }
+    const inactive = destinationAssignments.find((assignment) => assignment.estado === 'inactivo');
+    if (inactive) {
+      await tx.update(personasRoles).set({
+        estado: 'activo', fechaFin: null, updatedAt: new Date(), updatedBy: input.actorId,
+      }).where(and(
+        eq(personasRoles.personaId, input.personId),
+        eq(personasRoles.rolId, destinationRole.id),
+        eq(personasRoles.fechaInicio, inactive.fechaInicio),
+      ));
+    } else {
+      const [created] = await tx.insert(personasRoles).values({
+        personaId: input.personId, rolId: destinationRole.id, fechaInicio: startDate, createdBy: input.actorId,
+      }).onConflictDoNothing().returning();
+      if (!created) throw conflict('La persona ya tiene este rol activo');
+    }
+    assertReplacementAllowed({
+      personId: input.personId,
+      actorId: input.actorId,
+      role: input.fromRole,
+      activeAdministratorCount,
+    });
+    return closeRoleAssignment(tx, origin, input.actorId);
   });
 }
 

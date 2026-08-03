@@ -53,39 +53,3 @@ export function assertTeacherRoleStatusChangeAuthorized(
     throw forbidden('Solo ADMINISTRADOR_SISTEMA puede inactivar el rol PROFESOR');
   }
 }
-
-export type RoleAssignmentForCleanup = {
-  fechaInicio: string;
-  updatedAt: Date;
-  createdAt: Date;
-  tieBreaker: string;
-};
-
-export function selectRoleAssignmentToKeep<T extends RoleAssignmentForCleanup>(assignments: T[]): T | undefined {
-  return assignments.reduce<T | undefined>((latest, candidate) => {
-    if (!latest) return candidate;
-    const comparison = compareRoleAssignmentRecency(candidate, latest);
-    return comparison > 0 ? candidate : latest;
-  }, undefined);
-}
-
-export function compareRoleAssignmentRecency(
-  left: RoleAssignmentForCleanup,
-  right: RoleAssignmentForCleanup,
-): number {
-  return left.fechaInicio.localeCompare(right.fechaInicio)
-    || left.updatedAt.getTime() - right.updatedAt.getTime()
-    || left.createdAt.getTime() - right.createdAt.getTime()
-    || left.tieBreaker.localeCompare(right.tieBreaker);
-}
-
-export async function runRoleReplacement<T>(
-  transaction: <Result>(work: () => Promise<Result>) => Promise<Result>,
-  activateDestination: () => Promise<void>,
-  deactivateOrigin: () => Promise<T>,
-): Promise<T> {
-  return transaction(async () => {
-    await activateDestination();
-    return deactivateOrigin();
-  });
-}
