@@ -11,7 +11,27 @@ import type { AuthContext } from '../../types/fastify.js';
 
 const MANAGERS = new Set(['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO']);
 type WallAuth = Pick<AuthContext, 'personaId' | 'roles'>;
+type WallCourse = {
+  id: string;
+  code: string;
+  name: string;
+  professorId: string | null;
+  periodState: 'programado' | 'activo' | 'culminado';
+};
 const isManager = (auth: WallAuth) => auth.roles.some((role) => MANAGERS.has(role));
+
+export function getCourseWallCapabilities(
+  course: WallCourse,
+  auth: WallAuth,
+  hasEnrollment: boolean,
+) {
+  const assignedProfessor = auth.roles.includes('PROFESOR') && course.professorId === auth.personaId;
+  const canWrite = isManager(auth) || (assignedProfessor && course.periodState === 'activo');
+  return {
+    canRead: isManager(auth) || assignedProfessor || (auth.roles.includes('ALUMNO') && hasEnrollment),
+    canWrite,
+  };
+}
 
 export async function assertCourseWallAccess(
   db: Database,
@@ -31,12 +51,8 @@ export async function assertCourseWallAccess(
     .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, cursosProgramados.periodoAcademicoId))
     .where(eq(cursosProgramados.id, courseId)).limit(1);
   if (!course) throw notFound('Curso programado no encontrado');
-  if (isManager(auth)) return course;
-  if (auth.roles.includes('PROFESOR') && course.professorId === auth.personaId) {
-    if (write && course.periodState !== 'activo') throw forbidden('El muro solo admite publicaciones docentes en periodos activos');
-    return course;
-  }
-  if (!write && auth.roles.includes('ALUMNO')) {
+  let hasEnrollment = false;
+  if (!isManager(auth) && auth.roles.includes('ALUMNO')) {
     const [enrollment] = await db.select({ id: matriculaCursosProgramados.id })
       .from(matriculaCursosProgramados)
       .innerJoin(matriculasCarrera, eq(matriculasCarrera.id, matriculaCursosProgramados.matriculaCarreraId))
@@ -45,9 +61,17 @@ export async function assertCourseWallAccess(
         eq(matriculasCarrera.personaId, auth.personaId),
         inArray(matriculaCursosProgramados.estado, ['activo', 'completado']),
       )).limit(1);
-    if (enrollment) return course;
+    hasEnrollment = Boolean(enrollment);
   }
-  throw forbidden(write ? 'Solo el docente asignado puede publicar' : 'No estás matriculado en este curso');
+  const capabilities = getCourseWallCapabilities(course, auth, hasEnrollment);
+  if (!capabilities.canRead) throw forbidden(write ? 'Solo el docente asignado puede publicar' : 'No estás matriculado en este curso');
+  if (write && !capabilities.canWrite) {
+    if (auth.roles.includes('PROFESOR') && course.professorId === auth.personaId) {
+      throw forbidden('El muro solo admite publicaciones docentes en periodos activos');
+    }
+    throw forbidden('Solo el docente asignado puede publicar');
+  }
+  return { ...course, canWrite: capabilities.canWrite };
 }
 
 export async function listCoursePosts(
@@ -90,7 +114,7 @@ export async function listCoursePosts(
     .orderBy(asc(documentos.nombreOriginal));
   const total = Number(totalRows[0]?.value ?? 0);
   return {
-    course: { id: course.id, code: course.code, name: course.name },
+    course: { id: course.id, code: course.code, name: course.name, canWrite: course.canWrite },
     data: posts.map((post) => ({ ...post, archivos: attachments.filter((item) => item.publicacionId === post.id) })),
     pagination: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) },
   };

@@ -16,7 +16,12 @@ export async function registerCourseWallRoutes(app: FastifyInstance): Promise<vo
   const guarded = { preHandler: [app.authenticate, authorize(...roles)] };
   app.get('/cursos-programados/:id/muro', {
     ...guarded,
-    schema: { tags: ['Muro de curso'], summary: 'Listar publicaciones de un curso programado', security },
+    schema: {
+      tags: ['Muro de curso'],
+      summary: 'Listar publicaciones de un curso programado',
+      description: 'La propiedad `course.canWrite` expresa la autorización efectiva para crear, editar, fijar o retirar publicaciones en este curso.',
+      security,
+    },
   }, (request) => {
     const courseId = z.object({ id }).parse(request.params).id;
     const query = z.object({

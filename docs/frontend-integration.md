@@ -106,7 +106,7 @@ La carga directa de un libro Excel no forma parte de la API publicada.
 
 - Escala vigente: A `15–20`, B `13–<15`, C `10.5–<13` y D `0–<10.5`; solo A/B aprueban. Actas e historial incluyen `escalaCodigo`; los registros anteriores conservan `legacy_11`.
 - `POST/GET /documentos`, `POST /documentos/:id/url-descarga` y `DELETE /documentos/:id` gestionan archivos privados. La URL firmada dura cinco minutos y no se persiste.
-- `GET/POST /cursos-programados/:id/muro`, `PATCH/DELETE /publicaciones-curso/:id` implementan el muro. La respuesta paginada de lectura incluye `course: { id, code, name }` después de autorizar el acceso; un adjunto debe pertenecer al mismo curso.
+- `GET/POST /cursos-programados/:id/muro`, `PATCH/DELETE /publicaciones-curso/:id` implementan el muro. La respuesta paginada de lectura incluye `course: { id, code, name, canWrite }` después de autorizar el acceso; `canWrite` es la autorización efectiva para crear y moderar publicaciones, por lo que el frontend no debe inferirla desde los roles locales. Un adjunto debe pertenecer al mismo curso.
 - `GET /alumno/me/{inicio,cursos,notas,horario,historial,asistencia,talleres,documentos}` deriva siempre la persona del token y exige rol `ALUMNO`.
 - `GET /alumno/me/cursos/:courseId` devuelve el espacio contextual del curso: datos, horarios, evaluaciones, resultado final publicado, asistencia y documentos. El backend valida que el alumno autenticado esté matriculado y responde `404` sin revelar cursos ajenos.
 - El inicio del portal consume únicamente agenda, cursos y talleres. Historial vive en una vista propia; asistencia y documentos se presentan dentro del curso programado.
