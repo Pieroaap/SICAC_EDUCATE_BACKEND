@@ -25,6 +25,10 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
         { name: 'Asistencia', description: 'Control de asistencia e inhabilitación' },
         { name: 'Egreso', description: 'Elegibilidad y aprobación de egresados' },
         { name: 'Talleres', description: 'Talleres extracurriculares e inscripciones' },
+        { name: 'Documentos', description: 'Archivos privados y documentos académicos' },
+        { name: 'Muro de curso', description: 'Publicaciones por curso programado' },
+        { name: 'Portal del alumno', description: 'Consultas académicas del alumno autenticado' },
+        { name: 'Promoción', description: 'Habilitación y preinscripción al siguiente ciclo' },
       ],
       components: {
         securitySchemes: {

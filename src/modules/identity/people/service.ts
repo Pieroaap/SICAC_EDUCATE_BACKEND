@@ -27,6 +27,12 @@ import {
 } from '../../../db/schema/index.js';
 import { badRequest, conflict, notFound } from '../../../shared/errors.js';
 import { splitSurnames } from '../../students/service.js';
+import {
+  assertDestinationCanBeActivated,
+  assertDirectRoleRemovalAllowed,
+  assertReplacementAllowed,
+  type SystemRole,
+} from './role-lifecycle.js';
 
 export async function assignStudentGuardian(
   db: Database,
@@ -221,76 +227,256 @@ export async function assignPersonRole(
   db: Database,
   input: {
     personId: string;
-    role: 'ALUMNO' | 'PROFESOR' | 'GESTOR_ACADEMICO' | 'DIRECTOR_ACADEMICO' | 'ADMINISTRADOR_SISTEMA';
+    role: SystemRole;
     actorId: string;
-    student?: {
-      carreraId: string;
-      periodoInicioId: string;
-      estado: NonNullable<typeof perfilesAlumno.$inferInsert.estado>;
-      beneficio: NonNullable<typeof perfilesAlumno.$inferInsert.beneficio>;
-      tipoBeneficio: NonNullable<typeof perfilesAlumno.$inferInsert.tipoBeneficio>;
-    } | undefined;
+    student?: StudentRoleInput | undefined;
   },
 ) {
   return db.transaction(async (tx) => {
+    await lockPersonRoleAssignments(tx, input.personId);
     const [person] = await tx.select({ id: personas.id }).from(personas)
       .where(eq(personas.id, input.personId)).limit(1);
     if (!person) throw notFound('Persona no encontrada');
     const [role] = await tx.select({ id: roles.id }).from(roles)
       .where(and(eq(roles.codigo, input.role), eq(roles.estado, 'activo'))).limit(1);
     if (!role) throw notFound('Rol no encontrado');
-    const [active] = await tx.select({ personaId: personasRoles.personaId }).from(personasRoles)
+    const assignments = await tx.select({
+      fechaInicio: personasRoles.fechaInicio,
+      estado: personasRoles.estado,
+    }).from(personasRoles)
       .where(and(
         eq(personasRoles.personaId, input.personId),
         eq(personasRoles.rolId, role.id),
-        eq(personasRoles.estado, 'activo'),
-      )).limit(1);
-    if (active) throw conflict('La persona ya tiene este rol activo');
+      )).orderBy(desc(personasRoles.fechaInicio));
+    assertDestinationCanBeActivated(assignments.some((assignment) => assignment.estado === 'activo'));
 
     let roleStart = new Date().toISOString().slice(0, 10);
     if (input.role === 'ALUMNO') {
-      if (!input.student) throw badRequest('El rol Alumno requiere perfil e inscripción inicial');
-      const [context] = await tx.select({
-        planId: planesCurriculares.id,
-        anio: periodosAcademicos.anio,
-        periodo: periodosAcademicos.periodo,
-        fechaInicio: periodosAcademicos.fechaInicio,
-      }).from(planesCurriculares)
-        .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, input.student.periodoInicioId))
-        .where(and(
-          eq(planesCurriculares.carreraId, input.student.carreraId),
-          eq(planesCurriculares.estado, 'activo'),
-          eq(periodosAcademicos.carreraId, input.student.carreraId),
-        ))
-        .orderBy(desc(planesCurriculares.createdAt), desc(planesCurriculares.version))
-        .limit(1);
-      if (!context) throw badRequest('Carrera, periodo o plan activo no encontrado');
-      roleStart = context.fechaInicio;
-      await tx.insert(perfilesAlumno).values({
-        personaId: input.personId,
-        estado: input.student.estado,
-        anioIngreso: context.anio,
-        periodoIngreso: `${context.anio}-${context.periodo}`,
-        beneficio: input.student.beneficio,
-        tipoBeneficio: input.student.tipoBeneficio,
-        createdBy: input.actorId,
-      }).onConflictDoUpdate({
-        target: perfilesAlumno.personaId,
-        set: { estado: input.student.estado, updatedAt: new Date(), updatedBy: input.actorId },
-      });
-      await tx.insert(inscripcionesCarrera).values({
-        personaId: input.personId,
-        carreraId: input.student.carreraId,
-        planCurricularId: context.planId,
-        periodoInicioId: input.student.periodoInicioId,
-        createdBy: input.actorId,
-      });
+      roleStart = await ensureStudentRoleData(tx, input.personId, input.student, input.actorId);
     }
-    await tx.insert(personasRoles).values({
-      personaId: input.personId, rolId: role.id, fechaInicio: roleStart, createdBy: input.actorId,
-    });
+    const inactive = assignments.find((assignment) => assignment.estado === 'inactivo');
+    if (inactive) {
+      await tx.update(personasRoles).set({
+        estado: 'activo', fechaFin: null, updatedAt: new Date(), updatedBy: input.actorId,
+      }).where(and(
+        eq(personasRoles.personaId, input.personId),
+        eq(personasRoles.rolId, role.id),
+        eq(personasRoles.fechaInicio, inactive.fechaInicio),
+      ));
+    } else {
+      const [created] = await tx.insert(personasRoles).values({
+        personaId: input.personId, rolId: role.id, fechaInicio: roleStart, createdBy: input.actorId,
+      }).onConflictDoNothing().returning();
+      if (!created) throw conflict('La persona ya tiene este rol activo');
+    }
     return { personaId: input.personId, role: input.role };
   });
+}
+
+type StudentRoleInput = {
+  carreraId: string;
+  periodoInicioId: string;
+  estado: NonNullable<typeof perfilesAlumno.$inferInsert.estado>;
+  beneficio: NonNullable<typeof perfilesAlumno.$inferInsert.beneficio>;
+  tipoBeneficio: NonNullable<typeof perfilesAlumno.$inferInsert.tipoBeneficio>;
+};
+
+type RoleTransaction = Pick<Database, 'execute' | 'insert' | 'select' | 'update'>;
+
+async function lockPersonRoleAssignments(tx: RoleTransaction, personId: string) {
+  await tx.execute(sql`select persona_id from personas_roles where persona_id = ${personId} for update`);
+}
+
+async function ensureStudentRoleData(
+  tx: RoleTransaction,
+  personId: string,
+  student: StudentRoleInput | undefined,
+  actorId: string,
+): Promise<string> {
+  if (!student) {
+    const [profiles, registrations] = await Promise.all([
+      tx.select({ personaId: perfilesAlumno.personaId }).from(perfilesAlumno)
+        .where(eq(perfilesAlumno.personaId, personId)).limit(1),
+      tx.select({ id: inscripcionesCarrera.id }).from(inscripcionesCarrera)
+        .where(and(eq(inscripcionesCarrera.personaId, personId), eq(inscripcionesCarrera.estado, 'activo'))).limit(1),
+    ]);
+    if (!profiles[0] || !registrations[0]) {
+      throw badRequest('El rol Alumno requiere perfil e inscripción inicial');
+    }
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  const [context] = await tx.select({
+    planId: planesCurriculares.id,
+    anio: periodosAcademicos.anio,
+    periodo: periodosAcademicos.periodo,
+    fechaInicio: periodosAcademicos.fechaInicio,
+  }).from(planesCurriculares)
+    .innerJoin(periodosAcademicos, eq(periodosAcademicos.id, student.periodoInicioId))
+    .where(and(
+      eq(planesCurriculares.carreraId, student.carreraId),
+      eq(planesCurriculares.estado, 'activo'),
+      eq(periodosAcademicos.carreraId, student.carreraId),
+      inArray(periodosAcademicos.estado, ['programado', 'activo']),
+    ))
+    .orderBy(desc(planesCurriculares.createdAt), desc(planesCurriculares.version))
+    .limit(1);
+  if (!context) throw badRequest('Carrera, periodo o plan curricular activo no encontrado');
+
+  await tx.insert(perfilesAlumno).values({
+    personaId: personId,
+    estado: student.estado,
+    anioIngreso: context.anio,
+    periodoIngreso: `${context.anio}-${context.periodo}`,
+    beneficio: student.beneficio,
+    tipoBeneficio: student.tipoBeneficio,
+    createdBy: actorId,
+  }).onConflictDoUpdate({
+    target: perfilesAlumno.personaId,
+    set: {
+      estado: student.estado,
+      beneficio: student.beneficio,
+      tipoBeneficio: student.tipoBeneficio,
+      updatedAt: new Date(),
+      updatedBy: actorId,
+    },
+  });
+
+  const [registration] = await tx.select({ id: inscripcionesCarrera.id }).from(inscripcionesCarrera)
+    .where(and(
+      eq(inscripcionesCarrera.personaId, personId),
+      eq(inscripcionesCarrera.carreraId, student.carreraId),
+      eq(inscripcionesCarrera.estado, 'activo'),
+    )).limit(1);
+  if (!registration) {
+    await tx.insert(inscripcionesCarrera).values({
+      personaId: personId,
+      carreraId: student.carreraId,
+      planCurricularId: context.planId,
+      periodoInicioId: student.periodoInicioId,
+      createdBy: actorId,
+    });
+  }
+  return context.fechaInicio;
+}
+
+export async function deactivatePersonRole(
+  db: Database,
+  input: { personId: string; role: SystemRole; actorId: string },
+) {
+  return db.transaction(async (tx) => {
+    await lockPersonRoleAssignments(tx, input.personId);
+    const assignment = await findActiveRoleAssignment(tx, input.personId, input.role);
+    const activeAssignments = await listActiveRoleAssignments(tx, input.personId);
+    const activeAdministratorCount = input.role === 'ADMINISTRADOR_SISTEMA'
+      ? await countActiveAdministrators(tx)
+      : 0;
+    assertDirectRoleRemovalAllowed({
+      ...input,
+      activeRoleCount: activeAssignments.length,
+      activeAdministratorCount,
+    });
+    return closeRoleAssignment(tx, assignment, input.actorId);
+  });
+}
+
+export async function replacePersonRole(
+  db: Database,
+  input: {
+    personId: string; fromRole: SystemRole; toRole: SystemRole; actorId: string;
+    student?: StudentRoleInput | undefined;
+  },
+) {
+  if (input.fromRole === input.toRole) throw badRequest('El rol de origen y destino deben ser distintos');
+  return db.transaction(async (tx) => {
+    await lockPersonRoleAssignments(tx, input.personId);
+    const origin = await findActiveRoleAssignment(tx, input.personId, input.fromRole);
+    const activeAdministratorCount = input.fromRole === 'ADMINISTRADOR_SISTEMA'
+      ? await countActiveAdministrators(tx)
+      : 0;
+    const [destinationRole] = await tx.select({ id: roles.id }).from(roles)
+      .where(and(eq(roles.codigo, input.toRole), eq(roles.estado, 'activo'))).limit(1);
+    if (!destinationRole) throw notFound('Rol destino no encontrado');
+    const destinationAssignments = await tx.select({
+      fechaInicio: personasRoles.fechaInicio, estado: personasRoles.estado,
+    }).from(personasRoles).where(and(
+      eq(personasRoles.personaId, input.personId),
+      eq(personasRoles.rolId, destinationRole.id),
+    )).orderBy(desc(personasRoles.fechaInicio));
+    assertDestinationCanBeActivated(destinationAssignments.some((assignment) => assignment.estado === 'activo'));
+
+    let startDate = new Date().toISOString().slice(0, 10);
+    if (input.toRole === 'ALUMNO') {
+      startDate = await ensureStudentRoleData(tx, input.personId, input.student, input.actorId);
+    }
+    const inactive = destinationAssignments.find((assignment) => assignment.estado === 'inactivo');
+    if (inactive) {
+      await tx.update(personasRoles).set({
+        estado: 'activo', fechaFin: null, updatedAt: new Date(), updatedBy: input.actorId,
+      }).where(and(
+        eq(personasRoles.personaId, input.personId),
+        eq(personasRoles.rolId, destinationRole.id),
+        eq(personasRoles.fechaInicio, inactive.fechaInicio),
+      ));
+    } else {
+      const [created] = await tx.insert(personasRoles).values({
+        personaId: input.personId, rolId: destinationRole.id, fechaInicio: startDate, createdBy: input.actorId,
+      }).onConflictDoNothing().returning();
+      if (!created) throw conflict('La persona ya tiene este rol activo');
+    }
+    assertReplacementAllowed({
+      personId: input.personId,
+      actorId: input.actorId,
+      role: input.fromRole,
+      activeAdministratorCount,
+    });
+    return closeRoleAssignment(tx, origin, input.actorId);
+  });
+}
+
+async function findActiveRoleAssignment(tx: RoleTransaction, personId: string, role: SystemRole) {
+  const [assignment] = await tx.select({
+    personaId: personasRoles.personaId,
+    rolId: personasRoles.rolId,
+    fechaInicio: personasRoles.fechaInicio,
+  }).from(personasRoles).innerJoin(roles, eq(roles.id, personasRoles.rolId)).where(and(
+    eq(personasRoles.personaId, personId),
+    eq(personasRoles.estado, 'activo'),
+    eq(roles.codigo, role),
+  )).orderBy(desc(personasRoles.fechaInicio)).limit(1);
+  if (!assignment) throw notFound(`La persona no tiene el rol ${role} activo`);
+  return assignment;
+}
+
+function listActiveRoleAssignments(tx: RoleTransaction, personId: string) {
+  return tx.select({ rolId: personasRoles.rolId }).from(personasRoles)
+    .where(and(eq(personasRoles.personaId, personId), eq(personasRoles.estado, 'activo')));
+}
+
+async function countActiveAdministrators(tx: RoleTransaction): Promise<number> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sicac:roles:administrador'))`);
+  const [result] = await tx.select({ total: count() }).from(personasRoles)
+    .innerJoin(roles, eq(roles.id, personasRoles.rolId))
+    .where(and(eq(personasRoles.estado, 'activo'), eq(roles.codigo, 'ADMINISTRADOR_SISTEMA')));
+  return result?.total ?? 0;
+}
+
+async function closeRoleAssignment(
+  tx: RoleTransaction,
+  assignment: { personaId: string; rolId: string; fechaInicio: string },
+  actorId: string,
+) {
+  const [updated] = await tx.update(personasRoles).set({
+    estado: 'inactivo', fechaFin: new Date().toISOString().slice(0, 10),
+    updatedAt: new Date(), updatedBy: actorId,
+  }).where(and(
+    eq(personasRoles.personaId, assignment.personaId),
+    eq(personasRoles.rolId, assignment.rolId),
+    eq(personasRoles.fechaInicio, assignment.fechaInicio),
+    eq(personasRoles.estado, 'activo'),
+  )).returning();
+  if (!updated) throw conflict('La asignación de rol cambió durante la operación');
+  return updated;
 }
 
 export async function listPeople(
@@ -499,28 +685,38 @@ export async function updateTeacherRoleStatus(
   estado: NonNullable<typeof personasRoles.$inferInsert.estado>,
   actorId: string,
 ) {
-  const [assignment] = await db.select({
-    personaId: personasRoles.personaId,
-    rolId: personasRoles.rolId,
-    fechaInicio: personasRoles.fechaInicio,
-  }).from(personasRoles)
-    .innerJoin(roles, eq(roles.id, personasRoles.rolId))
-    .where(and(eq(personasRoles.personaId, personId), eq(roles.codigo, 'PROFESOR')))
-    .orderBy(desc(personasRoles.fechaInicio))
-    .limit(1);
-  if (!assignment) throw notFound('La persona no tiene rol PROFESOR');
-
-  const [updated] = await db.update(personasRoles).set({
-    estado,
-    updatedAt: new Date(),
-    updatedBy: actorId,
-  }).where(and(
-    eq(personasRoles.personaId, assignment.personaId),
-    eq(personasRoles.rolId, assignment.rolId),
-    eq(personasRoles.fechaInicio, assignment.fechaInicio),
-  )).returning();
-  if (!updated) throw notFound('La asignación de profesor no fue encontrada');
-  return updated;
+  if (estado === 'inactivo') {
+    return deactivatePersonRole(db, { personId, role: 'PROFESOR', actorId });
+  }
+  return db.transaction(async (tx) => {
+    await lockPersonRoleAssignments(tx, personId);
+    const [teacherRole] = await tx.select({ id: roles.id }).from(roles)
+      .where(and(eq(roles.codigo, 'PROFESOR'), eq(roles.estado, 'activo'))).limit(1);
+    if (!teacherRole) throw notFound('El rol PROFESOR no existe o está inactivo');
+    const assignments = await tx.select({
+      personaId: personasRoles.personaId,
+      rolId: personasRoles.rolId,
+      fechaInicio: personasRoles.fechaInicio,
+      estado: personasRoles.estado,
+    }).from(personasRoles).where(and(
+      eq(personasRoles.personaId, personId),
+      eq(personasRoles.rolId, teacherRole.id),
+    )).orderBy(desc(personasRoles.fechaInicio));
+    const active = assignments.find((assignment) => assignment.estado === 'activo');
+    if (active) return active;
+    const inactive = assignments.find((assignment) => assignment.estado === 'inactivo');
+    if (!inactive) throw notFound('La persona no tiene rol PROFESOR');
+    const [updated] = await tx.update(personasRoles).set({
+      estado: 'activo', fechaFin: null, updatedAt: new Date(), updatedBy: actorId,
+    }).where(and(
+      eq(personasRoles.personaId, inactive.personaId),
+      eq(personasRoles.rolId, inactive.rolId),
+      eq(personasRoles.fechaInicio, inactive.fechaInicio),
+      eq(personasRoles.estado, 'inactivo'),
+    )).returning();
+    if (!updated) throw conflict('La asignación de profesor cambió durante la operación');
+    return updated;
+  });
 }
 
 export type TeacherImportRow = {
@@ -564,6 +760,9 @@ export async function importTeachers(
     };
   });
   const valid = parsed.filter((item) => item.value).map((item) => item.value!);
+  if (!dryRun && valid.some((item) => item.estado === 'inactivo')) {
+    throw badRequest('La importación de profesores no puede inactivar roles; use la baja segura de roles');
+  }
   const documents = valid.map((item) => item.dni);
   const existing = documents.length === 0 ? [] : await db.select({
     document: personas.numeroDocumento,

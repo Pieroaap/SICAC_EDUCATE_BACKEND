@@ -24,6 +24,13 @@ const id = z.string().uuid();
 const managers = ['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO'];
 const faculty = [...managers, 'PROFESOR'];
 const security = [{ bearerAuth: [] }];
+const schedule = z.object({
+  dia: z.enum(['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']),
+  horaInicio: z.string().regex(/^\d{2}:\d{2}$/),
+  horaFin: z.string().regex(/^\d{2}:\d{2}$/),
+  modalidad: z.enum(['presencial', 'virtual', 'hibrido']),
+  ubicacion: z.string().trim().min(1).max(500),
+}).refine((value) => value.horaFin > value.horaInicio, { message: 'La hora final debe ser posterior' });
 const paramsSchema = {
   type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } },
 } as const;
@@ -49,7 +56,11 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
     }),
   }, async (request) => {
     const query = z.object({ periodoId: id.optional(), profesorId: id.optional(), carreraId: id.optional() }).parse(request.query);
-    return listScheduledCourses(app.db, query);
+    const isManager = request.auth!.roles.some((role) => managers.includes(role));
+    return listScheduledCourses(app.db, {
+      ...query,
+      profesorId: isManager ? query.profesorId : request.auth!.personaId,
+    });
   });
 
   app.post('/cursos-programados', {
@@ -63,12 +74,16 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
           periodoAcademicoId: { type: 'string', format: 'uuid' },
           profesorPersonaId: { type: 'string', format: 'uuid' },
           seccion: { type: 'string', minLength: 1, maxLength: 30 },
+          cupoMaximo: { type: 'integer', minimum: 1 },
+          horarios: { type: 'array', items: { type: 'object' } },
         },
       },
     }),
   }, async (request) => {
     const body = z.object({
       planCursoId: id, periodoAcademicoId: id, profesorPersonaId: id,
+      cupoMaximo: z.number().int().positive().optional(),
+      horarios: z.array(schedule).default([]),
       seccion: z.string().trim().min(1).max(30).default('ÚNICA'),
     }).parse(request.body);
     return createScheduledCourse(app.db, { ...body, actorId: request.auth!.personaId });
@@ -84,6 +99,8 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
           profesorPersonaId: { type: 'string', format: 'uuid' },
           seccion: { type: 'string', minLength: 1, maxLength: 30 },
           estado: { type: 'string', enum: ['activo', 'inactivo'] },
+          cupoMaximo: { type: ['integer', 'null'], minimum: 1 },
+          horarios: { type: 'array', items: { type: 'object' } },
         },
       },
     }),
@@ -92,6 +109,8 @@ export async function registerOperationRoutes(app: FastifyInstance): Promise<voi
     const body = z.object({
       profesorPersonaId: id.optional(), seccion: z.string().trim().min(1).max(30).optional(),
       estado: z.enum(['activo', 'inactivo']).optional(),
+      cupoMaximo: z.number().int().positive().nullable().optional(),
+      horarios: z.array(schedule).optional(),
     }).parse(request.body);
     return updateScheduledCourse(app.db, {
       id: route.id,

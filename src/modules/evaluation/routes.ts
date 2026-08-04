@@ -30,6 +30,10 @@ const componentBody = z.object({
     nombre: z.string().trim().min(1).max(100),
     porcentaje: z.number().positive().max(100),
     orden: z.number().int().positive(),
+    tipo: z.string().trim().max(60).nullable().optional(),
+    fechaProgramada: z.string().datetime().nullable().optional(),
+    fechaLimite: z.string().datetime().nullable().optional(),
+    estado: z.enum(['programada', 'en_curso', 'cerrada']).optional(),
   })).min(1),
 });
 const gradesBody = z.object({
@@ -96,6 +100,10 @@ export async function registerEvaluationRoutes(app: FastifyInstance): Promise<vo
                 nombre: { type: 'string', minLength: 1, maxLength: 100 },
                 porcentaje: { type: 'number', exclusiveMinimum: 0, maximum: 100 },
                 orden: { type: 'integer', minimum: 1 },
+                tipo: { type: ['string', 'null'], maxLength: 60 },
+                fechaProgramada: { type: ['string', 'null'], format: 'date-time' },
+                fechaLimite: { type: ['string', 'null'], format: 'date-time' },
+                estado: { type: 'string', enum: ['programada', 'en_curso', 'cerrada'] },
               },
             },
           },

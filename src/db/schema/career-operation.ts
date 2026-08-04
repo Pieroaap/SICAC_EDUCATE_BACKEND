@@ -88,12 +88,14 @@ export const cursosProgramados = pgTable('cursos_programados', {
   periodoAcademicoId: uuid('periodo_academico_id').notNull().references(() => periodosAcademicos.id, { onDelete: 'restrict' }),
   profesorPersonaId: uuid('profesor_persona_id').notNull().references(() => personas.id, { onDelete: 'restrict' }),
   seccion: varchar('seccion', { length: 30 }).notNull(),
+  cupoMaximo: integer('cupo_maximo'),
   estado: activeStateEnum('estado').notNull().default('activo'),
   ...auditColumns,
 }, (t) => [
   uniqueIndex('cursos_programados_contexto_uq').on(t.planCursoId, t.periodoAcademicoId, t.seccion),
   index('cursos_programados_periodo_idx').on(t.periodoAcademicoId),
   index('cursos_programados_profesor_idx').on(t.profesorPersonaId),
+  check('cursos_programados_cupo_ck', sql`${t.cupoMaximo} is null or ${t.cupoMaximo} > 0`),
 ]);
 
 export const matriculaCursosProgramados = pgTable('matricula_cursos_programados', {

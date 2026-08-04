@@ -1,14 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authorize } from '../../../infrastructure/http/authorize.js';
+import { assertTeacherRoleStatusChangeAuthorized } from './role-lifecycle.js';
 import {
   assignStudentGuardian,
   assignPersonRole,
   createPersonWithoutAccess,
+  deactivatePersonRole,
   getPersonDetail,
   importTeachers,
   listPeople,
   listTeachers,
+  replacePersonRole,
   updatePerson,
   updateTeacherRoleStatus,
 } from './service.js';
@@ -291,6 +294,7 @@ const studentProfileBody = z.object({
   }, async (request) => {
     const params = z.object({ personaId: z.string().uuid() }).parse(request.params);
     const body = z.object({ estado: z.enum(['activo', 'inactivo']) }).parse(request.body);
+    assertTeacherRoleStatusChangeAuthorized(body.estado, request.auth!.roles);
     return updateTeacherRoleStatus(app.db, params.personaId, body.estado, request.auth!.personaId);
   });
 
@@ -376,6 +380,73 @@ const studentProfileBody = z.object({
       }).optional(),
     }).parse(request.body);
     return assignPersonRole(app.db, {
+      personId: params.id, ...body, actorId: request.auth!.personaId,
+    });
+  });
+
+  app.patch('/personas/:id/roles/:role', {
+    preHandler: [app.authenticate, authorize('ADMINISTRADOR_SISTEMA')],
+    schema: {
+      tags: ['Usuarios'],
+      summary: 'Inactivar una asignación de rol sin borrar su historial',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object', required: ['id', 'role'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          role: { type: 'string', enum: ['ALUMNO', 'PROFESOR', 'GESTOR_ACADEMICO', 'DIRECTOR_ACADEMICO', 'ADMINISTRADOR_SISTEMA'] },
+        },
+      },
+      body: {
+        type: 'object', required: ['estado'],
+        properties: { estado: { type: 'string', enum: ['inactivo'] } },
+      },
+    },
+  }, async (request) => {
+    const params = z.object({ id: z.string().uuid(), role: roleCode }).parse(request.params);
+    z.object({ estado: z.literal('inactivo') }).parse(request.body);
+    return deactivatePersonRole(app.db, {
+      personId: params.id, role: params.role, actorId: request.auth!.personaId,
+    });
+  });
+
+  app.post('/personas/:id/roles/cambiar', {
+    preHandler: [app.authenticate, authorize('ADMINISTRADOR_SISTEMA')],
+    schema: {
+      tags: ['Usuarios'],
+      summary: 'Sustituir un rol de forma atómica',
+      description: 'Activa o reactiva el destino y luego inactiva el origen dentro de una única transacción.',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object', required: ['fromRole', 'toRole'],
+        properties: {
+          fromRole: { type: 'string', enum: ['ALUMNO', 'PROFESOR', 'GESTOR_ACADEMICO', 'DIRECTOR_ACADEMICO', 'ADMINISTRADOR_SISTEMA'] },
+          toRole: { type: 'string', enum: ['ALUMNO', 'PROFESOR', 'GESTOR_ACADEMICO', 'DIRECTOR_ACADEMICO', 'ADMINISTRADOR_SISTEMA'] },
+          student: {
+            type: 'object',
+            required: ['carreraId', 'periodoInicioId', 'estado', 'beneficio', 'tipoBeneficio'],
+            properties: {
+              carreraId: { type: 'string', format: 'uuid' },
+              periodoInicioId: { type: 'string', format: 'uuid' },
+              estado: { type: 'string', enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'] },
+              beneficio: { type: 'string', enum: ['becado', 'credito', 'becado_credito', 'normal'] },
+              tipoBeneficio: { type: 'string', enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'] },
+            },
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const student = z.object({
+      carreraId: z.string().uuid(), periodoInicioId: z.string().uuid(),
+      estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']),
+      beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
+      tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
+    });
+    const body = z.object({ fromRole: roleCode, toRole: roleCode, student: student.optional() }).parse(request.body);
+    return replacePersonRole(app.db, {
       personId: params.id, ...body, actorId: request.auth!.personaId,
     });
   });

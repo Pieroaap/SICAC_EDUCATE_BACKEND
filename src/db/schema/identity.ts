@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   date,
@@ -72,6 +72,9 @@ export const personasRoles = pgTable('personas_roles', {
 }, (table) => [
   primaryKey({ name: 'personas_roles_pk', columns: [table.personaId, table.rolId, table.fechaInicio] }),
   index('personas_roles_rol_idx').on(table.rolId),
+  uniqueIndex('personas_roles_activa_uq')
+    .on(table.personaId, table.rolId)
+    .where(sql`${table.estado} = 'activo'`),
 ]);
 
 export const alumnoTutores = pgTable('alumno_tutores', {

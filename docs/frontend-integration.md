@@ -102,6 +102,20 @@ La carga inicial soportada utiliza:
 Se recomienda ejecutar primero con `dryRun: true` y luego con `dryRun: false`.
 La carga directa de un libro Excel no forma parte de la API publicada.
 
+## Contrato de requerimientos stakeholders
+
+- Escala vigente: A `15–20`, B `13–<15`, C `10.5–<13` y D `0–<10.5`; solo A/B aprueban. Actas e historial incluyen `escalaCodigo`; los registros anteriores conservan `legacy_11`.
+- `POST/GET /documentos`, `POST /documentos/:id/url-descarga` y `DELETE /documentos/:id` gestionan archivos privados. La URL firmada dura cinco minutos y no se persiste.
+- `GET/POST /cursos-programados/:id/muro`, `PATCH/DELETE /publicaciones-curso/:id` implementan el muro. La respuesta paginada de lectura incluye `course: { id, code, name, canWrite }` después de autorizar el acceso; `canWrite` es la autorización efectiva para crear y moderar publicaciones, por lo que el frontend no debe inferirla desde los roles locales. Un adjunto debe pertenecer al mismo curso.
+- `GET /alumno/me/{inicio,cursos,notas,horario,historial,asistencia,talleres,documentos}` deriva siempre la persona del token y exige rol `ALUMNO`.
+- `GET /alumno/me/cursos/:courseId` devuelve el espacio contextual del curso: datos, horarios, evaluaciones, resultado final publicado, asistencia y documentos. El backend valida que el alumno autenticado esté matriculado y responde `404` sin revelar cursos ajenos.
+- El inicio del portal consume únicamente agenda, cursos y talleres. Historial vive en una vista propia; asistencia y documentos se presentan dentro del curso programado.
+- `GET /promociones/habilitaciones`, `POST /promociones/recalcular`, `GET /preinscripciones`, `POST /preinscripciones/:id/confirmar` y `PATCH /preinscripciones/:id/estado` están restringidos a roles gestores.
+- La confirmación revalida cupos y crea matrícula e inscripciones en una sola transacción; nunca cambia el estado operativo del alumno.
+- Cursos programados reciben `cupoMaximo` y `horarios`; componentes de evaluación reciben `tipo`, fechas y `estado`.
+
+La sección histórica de Corte 4 conserva la descripción de la escala anterior únicamente como antecedente. Para nuevos registros rige la escala versionada indicada arriba.
+
 ## CORS
 
 `CORS_ORIGINS` contiene los orígenes permitidos separados por comas. Para
@@ -124,6 +138,9 @@ La inscripción permanente y la matrícula periódica son recursos distintos:
 - Crear una persona `ALUMNO` exige `initialRegistration` con `carreraId` y `periodoInicioId`.
 - El backend resuelve el plan activo más reciente y deriva el periodo de ingreso.
 - `POST /personas/:id/roles` permite al Administrador agregar roles; `ALUMNO` exige datos de perfil e inscripción.
+- `PATCH /personas/:id/roles/:role` con `{ estado: "inactivo" }` inactiva una asignación sin borrar su historial. Solo Administrador del Sistema; la persona debe conservar otro rol activo y no se permite retirar el último administrador ni el propio rol administrativo.
+- `POST /personas/:id/roles/cambiar` recibe `{ fromRole, toRole, student? }` y activa o reactiva primero el destino para después cerrar el origen dentro de una sola transacción. Si el destino es `ALUMNO`, `student` reutiliza la validación de perfil, carrera, periodo y plan; no crea un perfil ni una inscripción activos duplicados.
+- `PATCH /profesores/:personaId` conserva la activación para los roles gestores, pero la inactivación solo admite Administrador del Sistema y aplica el mismo cierre seguro del rol. La importación de profesores no inactiva roles; para esa transición se usa la baja segura.
 - La asignación de tutor usa fecha automática del backend.
 - El listado de excepciones admite solo Administrador y Director; la resolución sigue exclusiva de Dirección.
 

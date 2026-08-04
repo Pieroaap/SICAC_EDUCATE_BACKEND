@@ -19,6 +19,10 @@ import { registerUserRoutes } from './modules/identity/users/routes.js';
 import { registerHealthRoutes } from './modules/system/health/routes.js';
 import { registerStudentRoutes } from './modules/students/routes.js';
 import { registerWorkshopRoutes } from './modules/workshops/routes.js';
+import { registerDocumentRoutes } from './modules/documents/routes.js';
+import { registerCourseWallRoutes } from './modules/course-wall/routes.js';
+import { registerStudentPortalRoutes } from './modules/student-portal/routes.js';
+import { registerPromotionRoutes } from './modules/promotion/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = getEnv();
@@ -45,5 +49,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(registerAttendanceRoutes);
   await app.register(registerGraduationRoutes);
   await app.register(registerWorkshopRoutes);
+  await app.register(registerDocumentRoutes);
+  await app.register(registerCourseWallRoutes);
+  await app.register(registerStudentPortalRoutes);
+  await app.register(registerPromotionRoutes);
   return app;
 }
