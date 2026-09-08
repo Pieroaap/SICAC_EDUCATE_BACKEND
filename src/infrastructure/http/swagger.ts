@@ -29,6 +29,8 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
         { name: 'Muro de curso', description: 'Publicaciones por curso programado' },
         { name: 'Portal del alumno', description: 'Consultas académicas del alumno autenticado' },
         { name: 'Promoción', description: 'Habilitación y preinscripción al siguiente ciclo' },
+        { name: 'Institución', description: 'Noticias institucionales generales' },
+        { name: 'Privacidad', description: 'Políticas versionadas y evidencia de aceptación' },
       ],
       components: {
         securitySchemes: {

@@ -44,6 +44,21 @@ const studentProfileBody = z.object({
     'DIRECTOR_ACADEMICO',
     'ADMINISTRADOR_SISTEMA',
   ]);
+  const studentRoleBody = z.object({
+    carreraId: z.string().uuid(), periodoInicioId: z.string().uuid(),
+    anioIngreso: z.number().int().min(1900).max(2100).optional(),
+    periodoIngreso: z.string().trim().regex(/^[0-9]{4}\s*-\s*(I|II|III)$/).optional(),
+    estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']),
+    beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
+    tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
+  }).superRefine((value, ctx) => {
+    if ((value.anioIngreso === undefined) !== (value.periodoIngreso === undefined)) {
+      ctx.addIssue({ code: 'custom', message: 'Año y periodo de ingreso deben enviarse juntos' });
+    }
+    if (value.anioIngreso !== undefined && Number(value.periodoIngreso?.trim().slice(0, 4)) !== value.anioIngreso) {
+      ctx.addIssue({ code: 'custom', message: 'Año y periodo de ingreso no coinciden' });
+    }
+  });
   const createPersonBody = personBody.omit({ estado: true }).extend({
     initialRole: z.enum([
       'ALUMNO',
@@ -360,6 +375,8 @@ const studentProfileBody = z.object({
             properties: {
               carreraId: { type: 'string', format: 'uuid' },
               periodoInicioId: { type: 'string', format: 'uuid' },
+              anioIngreso: { type: 'integer', minimum: 1900, maximum: 2100 },
+              periodoIngreso: { type: 'string', pattern: '^[0-9]{4}\\s*-\\s*(I|II|III)$' },
               estado: { type: 'string', enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'] },
               beneficio: { type: 'string', enum: ['becado', 'credito', 'becado_credito', 'normal'] },
               tipoBeneficio: { type: 'string', enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'] },
@@ -372,12 +389,7 @@ const studentProfileBody = z.object({
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z.object({
       role: z.enum(['ALUMNO', 'PROFESOR', 'GESTOR_ACADEMICO', 'DIRECTOR_ACADEMICO', 'ADMINISTRADOR_SISTEMA']),
-      student: z.object({
-        carreraId: z.string().uuid(), periodoInicioId: z.string().uuid(),
-        estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']),
-        beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
-        tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
-      }).optional(),
+      student: studentRoleBody.optional(),
     }).parse(request.body);
     return assignPersonRole(app.db, {
       personId: params.id, ...body, actorId: request.auth!.personaId,
@@ -429,6 +441,8 @@ const studentProfileBody = z.object({
             properties: {
               carreraId: { type: 'string', format: 'uuid' },
               periodoInicioId: { type: 'string', format: 'uuid' },
+              anioIngreso: { type: 'integer', minimum: 1900, maximum: 2100 },
+              periodoIngreso: { type: 'string', pattern: '^[0-9]{4}\\s*-\\s*(I|II|III)$' },
               estado: { type: 'string', enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'] },
               beneficio: { type: 'string', enum: ['becado', 'credito', 'becado_credito', 'normal'] },
               tipoBeneficio: { type: 'string', enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'] },
@@ -439,13 +453,7 @@ const studentProfileBody = z.object({
     },
   }, async (request) => {
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
-    const student = z.object({
-      carreraId: z.string().uuid(), periodoInicioId: z.string().uuid(),
-      estado: z.enum(['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado']),
-      beneficio: z.enum(['becado', 'credito', 'becado_credito', 'normal']),
-      tipoBeneficio: z.enum(['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa']),
-    });
-    const body = z.object({ fromRole: roleCode, toRole: roleCode, student: student.optional() }).parse(request.body);
+    const body = z.object({ fromRole: roleCode, toRole: roleCode, student: studentRoleBody.optional() }).parse(request.body);
     return replacePersonRole(app.db, {
       personId: params.id, ...body, actorId: request.auth!.personaId,
     });

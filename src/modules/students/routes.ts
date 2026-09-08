@@ -21,8 +21,63 @@ export async function registerStudentRoutes(app: FastifyInstance): Promise<void>
             type: 'string',
             enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'],
           },
+          estadoPersona: { type: 'string', enum: ['activo', 'inactivo'] },
           page: { type: 'integer', minimum: 1, default: 1 },
           pageSize: { type: 'integer', minimum: 1, maximum: 20, default: 20 },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          required: ['data', 'pagination'],
+          properties: {
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: [
+                  'id', 'apellidos', 'nombres', 'dni', 'estado', 'estadoPersona',
+                  'anioIngreso', 'periodoIngreso', 'beneficio', 'tipoBeneficio',
+                  'tieneAcceso', 'carrera', 'plan',
+                ],
+                properties: {
+                  id: { type: 'string', format: 'uuid' },
+                  apellidos: { type: 'string' },
+                  nombres: { type: 'string' },
+                  telefono: { type: ['string', 'null'] },
+                  dni: { type: 'string' },
+                  estado: {
+                    type: 'string',
+                    enum: ['activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado'],
+                  },
+                  estadoPersona: { type: 'string', enum: ['activo', 'inactivo'] },
+                  anioIngreso: { type: 'integer' },
+                  periodoIngreso: { type: 'string' },
+                  beneficio: {
+                    type: 'string',
+                    enum: ['becado', 'credito', 'becado_credito', 'normal'],
+                  },
+                  tipoBeneficio: {
+                    type: 'string',
+                    enum: ['regular', 'media_beca', 'tercio_beca', 'especial', 'beca_completa'],
+                  },
+                  tieneAcceso: { type: 'boolean' },
+                  carrera: { type: ['string', 'null'] },
+                  plan: { type: ['string', 'null'] },
+                },
+              },
+            },
+            pagination: {
+              type: 'object',
+              required: ['page', 'pageSize', 'total', 'totalPages'],
+              properties: {
+                page: { type: 'integer' },
+                pageSize: { type: 'integer' },
+                total: { type: 'integer' },
+                totalPages: { type: 'integer' },
+              },
+            },
+          },
         },
       },
     },
@@ -32,6 +87,7 @@ export async function registerStudentRoutes(app: FastifyInstance): Promise<void>
       estado: z.enum([
         'activo', 'en_pausa', 'retirado', 'sin_contestar', 'graduado',
       ]).optional(),
+      estadoPersona: z.enum(['activo', 'inactivo']).optional(),
       page: z.coerce.number().int().min(1).default(1),
       pageSize: z.coerce.number().int().min(1).max(20).default(20),
     }).parse(request.query);

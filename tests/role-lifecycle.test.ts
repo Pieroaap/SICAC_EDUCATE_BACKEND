@@ -9,7 +9,7 @@ import {
   assertReplacementAllowed,
   assertTeacherRoleStatusChangeAuthorized,
 } from '../src/modules/identity/people/role-lifecycle.js';
-import { importTeachers, replacePersonRole } from '../src/modules/identity/people/service.js';
+import { importTeachers, normalizeHistoricalAdmission, replacePersonRole, studentProfileReactivationUpdate } from '../src/modules/identity/people/service.js';
 import { registerPeopleRoutes } from '../src/modules/identity/people/routes.js';
 import { personasRoles } from '../src/db/schema/identity.js';
 
@@ -28,6 +28,26 @@ function expectDomainError(action: () => void, statusCode: number) {
 }
 
 describe('ciclo de vida de roles', () => {
+  it('acepta un ingreso histórico 2020-I independiente del periodo operativo 2026-III', () => {
+    expect(normalizeHistoricalAdmission({ anioIngreso: 2020, periodoIngreso: '2020-i' })).toEqual({
+      anioIngreso: 2020,
+      periodoIngreso: '2020-I',
+    });
+  });
+
+  it('rechaza año y ciclo histórico inconsistentes', () => {
+    expectDomainError(() => normalizeHistoricalAdmission({ anioIngreso: 2020, periodoIngreso: '2021-I' }), 400);
+  });
+
+  it('preserva el ingreso histórico al reactivar un rol alumno', () => {
+    const update = studentProfileReactivationUpdate({
+      carreraId: 'career', periodoInicioId: 'period-2026-iii', anioIngreso: 2026,
+      periodoIngreso: '2026-III', estado: 'activo', beneficio: 'normal', tipoBeneficio: 'regular',
+    }, 'actor');
+    expect(update).not.toHaveProperty('anioIngreso');
+    expect(update).not.toHaveProperty('periodoIngreso');
+  });
+
   it('permite retirar un rol si quedan otros roles activos', () => {
     expect(() => assertDirectRoleRemovalAllowed(context)).not.toThrow();
   });

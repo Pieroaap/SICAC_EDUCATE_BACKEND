@@ -117,7 +117,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ['Usuarios'],
       summary: 'Habilitar acceso para una persona existente',
-      description: 'Crea la cuenta Supabase y usuarios_auth sin duplicar la identidad.',
+      description: 'Crea la cuenta Supabase y usuarios_auth. Reutiliza los roles activos; solo exige un rol inicial cuando la persona no tiene ninguno.',
       security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
@@ -126,7 +126,6 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       },
       body: {
         type: 'object',
-        required: ['role'],
         properties: {
           role: {
             type: 'string',
@@ -150,7 +149,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
         'GESTOR_ACADEMICO',
         'PROFESOR',
         'ALUMNO',
-      ]),
+      ]).optional(),
     }).parse(request.body);
     const result = await provisionAccessForPerson(app.db, getSupabaseAdminClient(), {
       personaId: params.personaId,

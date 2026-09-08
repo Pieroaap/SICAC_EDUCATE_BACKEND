@@ -21,7 +21,9 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
 
   app.post('/documentos', {
     preHandler: [app.authenticate],
-    schema: { tags: ['Documentos'], summary: 'Subir un documento privado', security, consumes: ['multipart/form-data'] },
+    schema: { tags: ['Documentos'], summary: 'Subir un documento privado', security, consumes: ['multipart/form-data'],
+      description: 'Multipart: archivo (binario), tipo, ambito, contextId opcional. publicadoBiblioteca opcional: texto true/false, predeterminado false. Solo gestores pueden publicar expresamente un archivo INSTITUCION en biblioteca; los archivos existentes no se publican por defecto.',
+    },
   }, async (request, reply) => {
     const body = request.body as Record<string, unknown> | undefined;
     const file = body?.archivo as { filename?: string; mimetype?: string; toBuffer?: () => Promise<Buffer> } | undefined;
@@ -31,17 +33,26 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
     const created = await createDocument(app.db, getSupabaseAdminClient(), getEnv().SUPABASE_STORAGE_BUCKET, {
       buffer: await file.toBuffer(), filename: file.filename, mimeType: file.mimetype,
       tipo: documentType.parse(fieldValue(body?.tipo)), ambito, contextId, auth: request.auth!,
+      publicadoBiblioteca: z.enum(['', 'true', 'false']).parse(fieldValue(body?.publicadoBiblioteca)) === 'true',
     });
     return reply.status(201).send(created);
   });
 
   app.get('/documentos', {
     preHandler: [app.authenticate],
-    schema: { tags: ['Documentos'], summary: 'Listar documentos autorizados', security },
+    schema: { tags: ['Documentos'], summary: 'Listar documentos autorizados', security,
+      description: 'Alumnos y profesores consultan biblioteca=true con ambito=INSTITUCION: solo archivos activos publicados expresamente. Sin este filtro se mantienen las reglas de documentos internos y por curso.',
+      querystring: { type: 'object', properties: {
+        page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
+        ambito: { type: 'string', enum: documentScope.options }, contextId: { type: 'string', format: 'uuid' },
+        tipo: { type: 'string', enum: documentType.options }, biblioteca: { type: 'boolean' },
+      } },
+    },
   }, (request) => {
     const query = z.object({
       page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20),
       ambito: documentScope.optional(), contextId: z.string().uuid().optional(), tipo: documentType.optional(),
+      biblioteca: z.union([z.enum(['true', 'false']), z.boolean()]).optional().transform((value) => value === true || value === 'true'),
     }).parse(request.query);
     return listDocuments(app.db, { ...query, auth: request.auth! });
   });

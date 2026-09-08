@@ -12,6 +12,7 @@ export const assignableStaffRoles = [
 ] as const;
 
 type StaffRole = (typeof assignableStaffRoles)[number];
+type ProvisionableRole = StaffRole | 'ALUMNO';
 
 type CreateUserInput = {
   tipoDocumento: 'dni' | 'pasaporte' | 'carnet_extranjeria' | 'otro';
@@ -41,9 +42,28 @@ function buildUsername(
 
 type ProvisionAccessInput = {
   personaId: string;
-  role: StaffRole | 'ALUMNO';
+  role?: ProvisionableRole | undefined;
   actorId: string;
 };
+
+export function resolveProvisionAccessRoles(
+  activeRoles: readonly ProvisionableRole[],
+  requestedRole?: ProvisionableRole,
+): { effectiveRoles: ProvisionableRole[]; roleToAssign: ProvisionableRole | null } {
+  const effectiveRoles = [...new Set(activeRoles)];
+  if (effectiveRoles.length > 0) {
+    if (requestedRole && !effectiveRoles.includes(requestedRole)) {
+      throw conflict(
+        'La persona ya tiene roles activos. Usa la gestión de roles para agregar uno diferente.',
+      );
+    }
+    return { effectiveRoles, roleToAssign: null };
+  }
+  if (!requestedRole) {
+    throw badRequest('La persona no tiene roles activos; selecciona un rol inicial');
+  }
+  return { effectiveRoles: [requestedRole], roleToAssign: requestedRole };
+}
 
 export async function provisionAccessForPerson(
   db: Database,
@@ -56,9 +76,26 @@ export async function provisionAccessForPerson(
   const [existingAccount] = await db.select({ id: usuariosAuth.id }).from(usuariosAuth)
     .where(eq(usuariosAuth.personaId, person.id)).limit(1);
   if (existingAccount) throw conflict('La persona ya tiene acceso al sistema');
-  const [role] = await db.select({ id: roles.id }).from(roles)
-    .where(and(eq(roles.codigo, input.role), eq(roles.estado, 'activo'))).limit(1);
-  if (!role) throw notFound(`El rol ${input.role} no existe o está inactivo`);
+  const activeAssignments = await db.select({ code: roles.codigo }).from(personasRoles)
+    .innerJoin(roles, and(
+      eq(roles.id, personasRoles.rolId),
+      eq(roles.estado, 'activo'),
+    ))
+    .where(and(
+      eq(personasRoles.personaId, person.id),
+      eq(personasRoles.estado, 'activo'),
+    ));
+  const decision = resolveProvisionAccessRoles(
+    activeAssignments.map(({ code }) => code as ProvisionableRole),
+    input.role,
+  );
+  const [roleToAssign] = decision.roleToAssign
+    ? await db.select({ id: roles.id }).from(roles)
+      .where(and(eq(roles.codigo, decision.roleToAssign), eq(roles.estado, 'activo'))).limit(1)
+    : [];
+  if (decision.roleToAssign && !roleToAssign) {
+    throw notFound(`El rol ${decision.roleToAssign} no existe o está inactivo`);
+  }
 
   const normalizedDocument = normalizeUsernamePart(person.numeroDocumento);
   const authEmail = person.correo
@@ -90,13 +127,21 @@ export async function provisionAccessForPerson(
         debeCambiarClave: true,
         createdBy: input.actorId,
       }).returning();
-      await tx.insert(personasRoles).values({
-        personaId: person.id,
-        rolId: role.id,
-        fechaInicio: new Date().toISOString().slice(0, 10),
-        createdBy: input.actorId,
-      }).onConflictDoNothing();
-      return { person, account, role: input.role, temporaryPassword: true };
+      if (decision.roleToAssign && roleToAssign) {
+        await tx.insert(personasRoles).values({
+          personaId: person.id,
+          rolId: roleToAssign.id,
+          fechaInicio: new Date().toISOString().slice(0, 10),
+          createdBy: input.actorId,
+        });
+      }
+      return {
+        person,
+        account,
+        roles: decision.effectiveRoles,
+        roleAssigned: Boolean(decision.roleToAssign),
+        temporaryPassword: true,
+      };
     });
   } catch (error) {
     await supabaseAdmin.auth.admin.deleteUser(authData.user.id);

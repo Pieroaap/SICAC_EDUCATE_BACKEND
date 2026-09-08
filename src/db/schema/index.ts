@@ -10,3 +10,4 @@ export * from './documents.js';
 export * from './course-wall.js';
 export * from './promotion.js';
 export * from './course-schedule.js';
+export * from './institutional.js';

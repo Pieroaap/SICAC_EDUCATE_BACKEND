@@ -83,7 +83,7 @@ export async function createPersonWithoutAccess(
   const normalizedStudentProfile = input.alumnoPerfil
     ? {
       ...input.alumnoPerfil,
-      periodoIngreso: input.alumnoPerfil.periodoIngreso.trim().toUpperCase().replace(/\s*-\s*/, '-'),
+      ...normalizeHistoricalAdmission(input.alumnoPerfil),
       condicionMedica: input.alumnoPerfil.condicionMedica?.trim() || null,
     }
     : undefined;
@@ -98,9 +98,6 @@ export async function createPersonWithoutAccess(
   }
   if (input.initialRole !== 'ALUMNO' && input.initialRegistration) {
     throw badRequest('La inscripción inicial solo aplica al rol ALUMNO');
-  }
-  if (normalizedStudentProfile && Number(normalizedStudentProfile.periodoIngreso.slice(0, 4)) !== normalizedStudentProfile.anioIngreso) {
-    throw badRequest('El aÃ±o de ingreso debe coincidir con el periodo de ingreso');
   }
   if (input.initialRole !== 'ALUMNO' && input.tutor) {
     throw badRequest('El tutor inicial solo puede registrarse al crear un alumno');
@@ -175,8 +172,6 @@ export async function createPersonWithoutAccess(
       await tx.insert(perfilesAlumno).values({
         personaId: created.id,
         ...alumnoPerfil,
-        anioIngreso: studentPeriod?.anio ?? alumnoPerfil.anioIngreso,
-        periodoIngreso: studentPeriod ? `${studentPeriod.anio}-${studentPeriod.periodo}` : alumnoPerfil.periodoIngreso,
         createdBy: input.createdBy,
       });
       if (initialRegistration && studentPlanId) {
@@ -276,6 +271,8 @@ export async function assignPersonRole(
 type StudentRoleInput = {
   carreraId: string;
   periodoInicioId: string;
+  anioIngreso?: number | undefined;
+  periodoIngreso?: string | undefined;
   estado: NonNullable<typeof perfilesAlumno.$inferInsert.estado>;
   beneficio: NonNullable<typeof perfilesAlumno.$inferInsert.beneficio>;
   tipoBeneficio: NonNullable<typeof perfilesAlumno.$inferInsert.tipoBeneficio>;
@@ -323,23 +320,21 @@ async function ensureStudentRoleData(
     .limit(1);
   if (!context) throw badRequest('Carrera, periodo o plan curricular activo no encontrado');
 
+  const historicalAdmission = normalizeHistoricalAdmission({
+    anioIngreso: student.anioIngreso ?? context.anio,
+    periodoIngreso: student.periodoIngreso ?? `${context.anio}-${context.periodo}`,
+  });
+
   await tx.insert(perfilesAlumno).values({
     personaId: personId,
     estado: student.estado,
-    anioIngreso: context.anio,
-    periodoIngreso: `${context.anio}-${context.periodo}`,
+    ...historicalAdmission,
     beneficio: student.beneficio,
     tipoBeneficio: student.tipoBeneficio,
     createdBy: actorId,
   }).onConflictDoUpdate({
     target: perfilesAlumno.personaId,
-    set: {
-      estado: student.estado,
-      beneficio: student.beneficio,
-      tipoBeneficio: student.tipoBeneficio,
-      updatedAt: new Date(),
-      updatedBy: actorId,
-    },
+    set: studentProfileReactivationUpdate(student, actorId),
   });
 
   const [registration] = await tx.select({ id: inscripcionesCarrera.id }).from(inscripcionesCarrera)
@@ -358,6 +353,30 @@ async function ensureStudentRoleData(
     });
   }
   return context.fechaInicio;
+}
+
+export function normalizeHistoricalAdmission(input: { anioIngreso: number; periodoIngreso: string }) {
+  const periodoIngreso = input.periodoIngreso.trim().toUpperCase().replace(/\s*-\s*/, '-');
+  if (!Number.isInteger(input.anioIngreso) || input.anioIngreso < 1900 || input.anioIngreso > 2100) {
+    throw badRequest('El año de ingreso debe estar entre 1900 y 2100');
+  }
+  if (!/^[0-9]{4}-(I|II|III)$/.test(periodoIngreso)) {
+    throw badRequest('El periodo de ingreso debe usar el formato AAAA-I, AAAA-II o AAAA-III');
+  }
+  if (Number(periodoIngreso.slice(0, 4)) !== input.anioIngreso) {
+    throw badRequest('El año de ingreso debe coincidir con el periodo de ingreso');
+  }
+  return { anioIngreso: input.anioIngreso, periodoIngreso };
+}
+
+export function studentProfileReactivationUpdate(student: StudentRoleInput, actorId: string) {
+  return {
+    estado: student.estado,
+    beneficio: student.beneficio,
+    tipoBeneficio: student.tipoBeneficio,
+    updatedAt: new Date(),
+    updatedBy: actorId,
+  };
 }
 
 export async function deactivatePersonRole(

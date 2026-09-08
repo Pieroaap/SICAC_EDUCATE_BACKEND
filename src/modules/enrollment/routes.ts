@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authorize } from '../../infrastructure/http/authorize.js';
+import { listRecognitionCourses, recognizeCourseBatch } from './recognition.js';
 import {
   createAcademicRecord, createBulkCareerEnrollments, createCareerEnrollment,
   createCareerRegistration, enrollInScheduledCourse, listAcademicRecords,
@@ -133,6 +134,34 @@ export async function registerEnrollmentRoutes(app: FastifyInstance): Promise<vo
       message: 'Indique fecha o periodo referencial',
     }).parse(request.body);
     return createAcademicRecord(app.db, { ...body, actorId: request.auth!.personaId });
+  });
+
+  app.get('/antecedentes-academicos/malla', {
+    ...guarded,
+    schema: { tags: ['Matrículas'], summary: 'Consultar malla histórica con aprobaciones y prerrequisitos', security,
+      querystring: { type: 'object', required: ['personaId'], properties: {
+        personaId: { type: 'string', format: 'uuid' }, page: { type: 'integer', minimum: 1 },
+        pageSize: { type: 'integer', minimum: 1, maximum: 100 },
+      } },
+    },
+  }, async (request) => listRecognitionCourses(app.db, pagination.extend({ personaId: id }).parse(request.query)));
+
+  app.post('/antecedentes-academicos/lote', {
+    preHandler: [app.authenticate, authorize('DIRECTOR_ACADEMICO', 'ADMINISTRADOR_SISTEMA')],
+    schema: { tags: ['Matrículas'], summary: 'Reconocer cursos históricos seleccionados de forma atómica', security,
+      description: 'Registra aprobado sin nota, con actor y motivo. No reconoce prerrequisitos implícitamente. Los antecedentes cuentan para inscripción y egreso.',
+      body: { type: 'object', required: ['personaId', 'planCursoIds', 'periodoReferencial', 'observacion'], properties: {
+        personaId: { type: 'string', format: 'uuid' },
+        planCursoIds: { type: 'array', minItems: 1, maxItems: 100, uniqueItems: true, items: { type: 'string', format: 'uuid' } },
+        periodoReferencial: { type: 'string', minLength: 1, maxLength: 100 },
+        observacion: { type: 'string', minLength: 1, maxLength: 1000 },
+      } },
+    },
+  }, async (request) => {
+    const body = z.object({ personaId: id, planCursoIds: z.array(id).min(1).max(100),
+      periodoReferencial: z.string().trim().min(1).max(100), observacion: z.string().trim().min(1).max(1000),
+    }).parse(request.body);
+    return recognizeCourseBatch(app.db, { ...body, actorId: request.auth!.personaId });
   });
 
   app.post('/matriculas/carrera', {

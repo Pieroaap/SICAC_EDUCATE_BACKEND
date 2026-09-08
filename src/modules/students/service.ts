@@ -36,6 +36,7 @@ export type StudentImportRow = {
 };
 
 type StudentState = NonNullable<typeof perfilesAlumno.$inferInsert.estado>;
+type PersonState = NonNullable<typeof personas.$inferInsert.estado>;
 type Benefit = NonNullable<typeof perfilesAlumno.$inferInsert.beneficio>;
 type BenefitType = NonNullable<typeof perfilesAlumno.$inferInsert.tipoBeneficio>;
 
@@ -226,12 +227,14 @@ export async function listStudents(
   filters: {
     search?: string | undefined;
     estado?: StudentState | undefined;
+    estadoPersona?: PersonState | undefined;
     page: number;
     pageSize: number;
   },
 ) {
   const conditions: SQL[] = [];
   if (filters.estado) conditions.push(eq(perfilesAlumno.estado, filters.estado));
+  if (filters.estadoPersona) conditions.push(eq(personas.estado, filters.estadoPersona));
   if (filters.search) {
     const term = `%${filters.search}%`;
     conditions.push(or(
@@ -272,21 +275,7 @@ export async function listStudents(
     .orderBy(desc(matriculasCarrera.fechaMatricula));
   const data = students.map(({ persona, profile, hasAccess }) => {
     const current = enrollments.find((item) => item.enrollment.personaId === persona.id);
-    return {
-      id: persona.id,
-      apellidos: [persona.apellidoPaterno, persona.apellidoMaterno].filter(Boolean).join(' '),
-      nombres: persona.nombres,
-      telefono: persona.telefono,
-      dni: persona.numeroDocumento,
-      estado: profile.estado,
-      anioIngreso: profile.anioIngreso,
-      periodoIngreso: profile.periodoIngreso,
-      beneficio: profile.beneficio,
-      tipoBeneficio: profile.tipoBeneficio,
-      tieneAcceso: Boolean(hasAccess),
-      carrera: current?.careerName ?? null,
-      plan: current?.planName ?? null,
-    };
+    return toStudentListItem(persona, profile, hasAccess, current);
   });
   const total = totalRow?.total ?? 0;
   return {
@@ -297,6 +286,30 @@ export async function listStudents(
       total,
       totalPages: Math.ceil(total / filters.pageSize),
     },
+  };
+}
+
+export function toStudentListItem(
+  persona: typeof personas.$inferSelect,
+  profile: typeof perfilesAlumno.$inferSelect,
+  hasAccess: string | null,
+  current?: { careerName: string; planName: string },
+) {
+  return {
+    id: persona.id,
+    apellidos: [persona.apellidoPaterno, persona.apellidoMaterno].filter(Boolean).join(' '),
+    nombres: persona.nombres,
+    telefono: persona.telefono,
+    dni: persona.numeroDocumento,
+    estado: profile.estado,
+    estadoPersona: persona.estado,
+    anioIngreso: profile.anioIngreso,
+    periodoIngreso: profile.periodoIngreso,
+    beneficio: profile.beneficio,
+    tipoBeneficio: profile.tipoBeneficio,
+    tieneAcceso: Boolean(hasAccess),
+    carrera: current?.careerName ?? null,
+    plan: current?.planName ?? null,
   };
 }
 
