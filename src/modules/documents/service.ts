@@ -29,6 +29,7 @@ type DocumentAuth = Pick<AuthContext, 'personaId' | 'roles'>;
 const publicDocumentColumns = {
   id: documentos.id, nombreOriginal: documentos.nombreOriginal, mimeType: documentos.mimeType,
   tamanoBytes: documentos.tamanoBytes, tipo: documentos.tipo, ambito: documentos.ambito,
+  publicadoBiblioteca: documentos.publicadoBiblioteca,
   carreraId: documentos.carreraId, planCurricularId: documentos.planCurricularId,
   cursoId: documentos.cursoId, cursoProgramadoId: documentos.cursoProgramadoId,
   periodoAcademicoId: documentos.periodoAcademicoId,
@@ -130,10 +131,14 @@ export async function createDocument(
   input: {
     buffer: Buffer; filename: string; mimeType: string; tipo: DocumentType;
     ambito: DocumentScope; contextId?: string | undefined; auth: DocumentAuth;
+    publicadoBiblioteca?: boolean | undefined;
   },
 ) {
   assertDocumentFile({ filename: input.filename, mimeType: input.mimeType, size: input.buffer.byteLength });
   assertDocumentSignature(input.buffer, input.mimeType);
+  if (input.publicadoBiblioteca && (!isManager(input.auth) || input.ambito !== 'INSTITUCION')) {
+    throw forbidden('Solo los gestores pueden publicar archivos institucionales en la biblioteca general');
+  }
   if (!isManager(input.auth)) {
     if (input.ambito !== 'CURSO_PROGRAMADO' || !input.contextId) throw forbidden('El profesor solo puede subir archivos a sus cursos');
     await assertScheduledCourseAccess(db, input.contextId, input.auth, true);
@@ -152,6 +157,7 @@ export async function createDocument(
       tamanoBytes: input.buffer.byteLength,
       tipo: input.tipo,
       ambito: input.ambito,
+      publicadoBiblioteca: input.publicadoBiblioteca ?? false,
       ...contextForScope(input.ambito, input.contextId),
       subidoPorPersonaId: input.auth.personaId,
       createdBy: input.auth.personaId,
@@ -168,13 +174,17 @@ export async function listDocuments(
   input: {
     auth: DocumentAuth; page: number; pageSize: number; ambito?: DocumentScope | undefined;
     contextId?: string | undefined; tipo?: DocumentType | undefined;
+    biblioteca?: boolean | undefined;
   },
 ) {
-  if (!isManager(input.auth)) {
+  const libraryReader = input.biblioteca === true && input.ambito === 'INSTITUCION'
+    && input.auth.roles.some((role) => role === 'ALUMNO' || role === 'PROFESOR');
+  if (!isManager(input.auth) && !libraryReader) {
     if (input.ambito !== 'CURSO_PROGRAMADO' || !input.contextId) throw forbidden('Indica un curso programado autorizado');
     await assertScheduledCourseAccess(db, input.contextId, input.auth, false);
   }
   const conditions = [eq(documentos.estado, 'activo')];
+  if (input.biblioteca || libraryReader) conditions.push(eq(documentos.publicadoBiblioteca, true), eq(documentos.ambito, 'INSTITUCION'));
   if (input.ambito) conditions.push(eq(documentos.ambito, input.ambito));
   if (input.tipo) conditions.push(eq(documentos.tipo, input.tipo));
   if (input.contextId && input.ambito) {
@@ -206,8 +216,8 @@ export async function createDocumentSignedUrl(
     .where(and(eq(documentos.id, id), eq(documentos.estado, 'activo'))).limit(1);
   if (!document) throw notFound('Documento no encontrado');
   if (!isManager(auth)) {
-    if (document.ambito === 'INSTITUCION') {
-      // Todo usuario autenticado puede consultar documentos institucionales.
+    if (document.ambito === 'INSTITUCION' && document.publicadoBiblioteca) {
+      // Solo archivos compartidos expresamente en la biblioteca general.
     } else if (document.ambito === 'CURSO_PROGRAMADO' && document.cursoProgramadoId) {
       await assertScheduledCourseAccess(db, document.cursoProgramadoId, auth, false);
     } else {

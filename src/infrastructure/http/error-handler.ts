@@ -20,6 +20,10 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
     }
 
+    if ('validation' in error && error.validation) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'Datos de entrada inválidos' });
+    }
+
     request.log.error(error);
     return reply.status(500).send({
       error: 'INTERNAL_ERROR',

@@ -14,6 +14,14 @@ La autenticación utiliza el token Bearer retornado por el inicio de sesión con
 
 ## Flujos operativos
 
+### Reconocimiento histórico selectivo
+
+- `GET /antecedentes-academicos/malla?personaId=<uuid>&page=1&pageSize=100`: administrador, dirección y gestor. Respuesta `{ data, pagination }`; cada curso contiene `id` (planCursoId), `planCurricularId`, `planNombre`, `cursoNombre`, `cursoCodigo`, `ciclo`, `prerrequisitoIds` y `estado` (`aprobado_regular`, `aprobado_reconocido`, `sin_aprobacion`). Incluye todos los planes inscritos; cargar todas las páginas para recorrer cadenas.
+- `POST /antecedentes-academicos/lote`: administrador o dirección. Body `{ personaId, planCursoIds, periodoReferencial, observacion }`, 1–100 UUID distintos, referencia de 1–100 caracteres y motivo de 1–1000, no vacíos. Retorna `{ data }` con antecedentes creados; actor obtenido de sesión y fecha auditada por base.
+- Escritura transaccional: 400 para cursos fuera de un plan inscrito; 409 para aprobación publicada o antecedente existente. Un conflicto revierte el lote entero. No se generan notas ni aprobaciones de prerrequisitos por transitividad.
+- La ficha permite elegir cursos de toda la malla; inscripción individual muestra la cadena si faltan prerrequisitos directos. Guardar el lote y reintentar `POST /matriculas/cursos` son operaciones separadas: un fallo de inscripción no revierte antecedentes confirmados. La autorización excepcional existente sigue disponible.
+- Caso de referencia: reconocer Actuación 1, 2 y 4 deja 3 pendiente. El egreso requiere publicar la aprobación de 3 y completar el resto del plan; Dirección aprueba el egreso. Regularización de notas posterior no forma parte de este endpoint.
+
 - Catálogos: carreras con plan inicial, versiones de planes, cursos obligatorios/electivos, malla del plan con hasta dos prerrequisitos y periodos independientes por carrera.
 - Identidad: `GET /personas`, `GET /alumnos` y `GET /profesores` ofrecen
   búsqueda, filtro por estado y paginación con la forma `{ data, pagination }`.
@@ -136,7 +144,7 @@ La inscripción permanente y la matrícula periódica son recursos distintos:
 # Onboarding y multirrol
 
 - Crear una persona `ALUMNO` exige `initialRegistration` con `carreraId` y `periodoInicioId`.
-- El backend resuelve el plan activo más reciente y deriva el periodo de ingreso.
+- El backend resuelve el plan activo más reciente. El año/término histórico de ingreso se conserva cuando se proporciona; el periodo operativo se usa como valor por defecto si no se indicó ingreso histórico.
 - `POST /personas/:id/roles` permite al Administrador agregar roles; `ALUMNO` exige datos de perfil e inscripción.
 - `PATCH /personas/:id/roles/:role` con `{ estado: "inactivo" }` inactiva una asignación sin borrar su historial. Solo Administrador del Sistema; la persona debe conservar otro rol activo y no se permite retirar el último administrador ni el propio rol administrativo.
 - `POST /personas/:id/roles/cambiar` recibe `{ fromRole, toRole, student? }` y activa o reactiva primero el destino para después cerrar el origen dentro de una sola transacción. Si el destino es `ALUMNO`, `student` reutiliza la validación de perfil, carrera, periodo y plan; no crea un perfil ni una inscripción activos duplicados.
@@ -181,3 +189,22 @@ publicación bloquea definitivamente componentes y notas.
 Tres tardanzas equivalen a una falta. Se genera alerta con dos faltas
 equivalentes o seis tardanzas, y retiro con tres faltas, nueve tardanzas o tres
 faltas equivalentes. Corregir asistencia nunca reactiva automáticamente.
+
+# Portal institucional y privacidad (2026-09-07)
+
+- `GET /noticias?page=&pageSize=` devuelve `{ data, pagination }`, solo publicadas para lectores. `gestion=true` habilita vista de gestión exclusivamente para Administración, Dirección y Gestión académica; admite filtro `estado`.
+- `POST /noticias` y `PUT /noticias/:id` requieren esos roles y reciben `{ titulo, contenido, estado, fijada?, documentoIds? }`; estados `borrador|publicada|retirada`, máximo diez adjuntos activos publicados en biblioteca.
+- `GET /documentos?scope=INSTITUCION&biblioteca=true&page=&pageSize=` habilita la biblioteca para alumnos y profesores. Solo devuelve archivos activos con `publicadoBiblioteca=true`.
+- `POST /documentos` multipart permite `publicadoBiblioteca=true` para publicación institucional explícita por gestores. Omitirlo conserva el archivo interno; los archivos preexistentes mantienen `false`. El frontend solicita confirmación antes de enviarlo.
+- `POST /documentos/:id/url-descarga` mantiene validación de audiencia antes de generar la URL firmada. La biblioteca no depende de un periodo académico.
+- `GET /privacidad/vigente` devuelve `{ policy, accepted, acceptedAt }` para la identidad autenticada.
+- `POST /privacidad/aceptaciones` exige rol alumno y `{ politicaId, acepto: true }`. La identidad y fecha se obtienen del servidor. Repetir la aceptación conserva la fecha original; una versión obsoleta responde 409.
+- `GET /privacidad/politicas`, `POST /privacidad/politicas` y `GET /privacidad/registro` son exclusivos de Administración. Las listas son paginadas. Publicar recibe `{ version, titulo, contenido, provisional }`, exige versión nueva y conserva textos y aceptaciones previos.
+- Una sesión de alumno sin aceptación recibe 403 con `error: "PRIVACY_ACCEPTANCE_REQUIRED"` en recursos protegidos. Auth y consulta/aceptación permanecen accesibles; una clave temporal debe cambiarse antes de aceptar. Un usuario con rol de personal y alumno conserva su operación de personal; el ámbito `/alumno/me/` exige consentimiento.
+- Migración 0020 incluye `temporal-1`, texto provisional editable mediante nueva versión. El frontend no debe tratarlo como texto legal definitivo.
+
+# Ingreso histórico
+
+- `alumnoPerfil` en alta conserva `anioIngreso` y `periodoIngreso` explícitos, por ejemplo `2020` y `2020-I`, aunque el periodo no exista.
+- Al asignar/cambiar al rol alumno, `student` admite ambos campos opcionales juntos; exige año coincidente y término I/II/III. Si se omiten, deriva el ingreso del periodo operativo por compatibilidad.
+- `periodoInicioId` representa la inscripción operativa y continúa referenciando un periodo existente. Reactivar un perfil existente conserva su ingreso histórico.

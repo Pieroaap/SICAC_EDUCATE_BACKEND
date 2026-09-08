@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import { and, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import { personas, personasRoles, roles, usuariosAuth } from '../../db/schema/index.js';
 import { unauthorized } from '../../shared/errors.js';
+import { assertPasswordReady, assertPrivacyAccepted, requiresPrivacy } from '../../modules/institutional/privacy.js';
 import type { AuthContext } from '../../types/fastify.js';
 
 type ActiveAssignment = {
@@ -88,6 +89,11 @@ export const requestAuthPlugin = fp(async (app) => {
     const auth = buildAuthContext(assignments, data.user.email ?? '');
     if (!auth) throw unauthorized('El usuario no tiene un perfil local activo');
     request.auth = auth;
+    const route = request.routeOptions.url ?? request.url.split('?')[0]!;
+    assertPasswordReady(auth.mustChangePassword, route);
+    if (requiresPrivacy(auth.roles, route)) {
+      await assertPrivacyAccepted(app.db, auth.personaId);
+    }
   });
 }, {
   name: 'request-auth',

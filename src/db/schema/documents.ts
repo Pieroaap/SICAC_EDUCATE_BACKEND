@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
-  check, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar,
+  boolean, check, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar,
 } from 'drizzle-orm/pg-core';
 import { auditColumns } from './common.js';
 import { carreras, cursos, periodosAcademicos, planesCurriculares } from './career-structure.js';
@@ -23,6 +23,7 @@ export const documentos = pgTable('documentos', {
   tamanoBytes: integer('tamano_bytes').notNull(),
   tipo: academicDocumentTypeEnum('tipo').notNull(),
   ambito: documentScopeEnum('ambito').notNull(),
+  publicadoBiblioteca: boolean('publicado_biblioteca').notNull().default(false),
   carreraId: uuid('carrera_id').references(() => carreras.id, { onDelete: 'restrict' }),
   planCurricularId: uuid('plan_curricular_id').references(() => planesCurriculares.id, { onDelete: 'restrict' }),
   cursoId: uuid('curso_id').references(() => cursos.id, { onDelete: 'restrict' }),
