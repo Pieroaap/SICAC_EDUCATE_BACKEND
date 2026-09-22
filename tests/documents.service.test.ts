@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { getTableConfig, PgDialect } from 'drizzle-orm/pg-core';
+import { documentos } from '../src/db/schema/documents.js';
 import { AppError } from '../src/shared/errors.js';
 import { assertDocumentFile, assertDocumentSignature, MAX_DOCUMENT_BYTES } from '../src/modules/documents/service.js';
 
 describe('assertDocumentFile', () => {
+  it('mantiene el límite de la base de datos alineado con las cargas de la API', () => {
+    const constraint = getTableConfig(documentos).checks.find((check) => check.name === 'documentos_tamano_ck');
+    expect(constraint).toBeDefined();
+    const expression = new PgDialect().sqlToQuery(constraint!.value).sql;
+    expect(Number(expression.match(/<=\s*(\d+)/)?.[1])).toBe(MAX_DOCUMENT_BYTES);
+  });
   it('acepta un PDF dentro del límite', () => {
     expect(() => assertDocumentFile({ filename: 'silabo.pdf', mimeType: 'application/pdf', size: 1024 }))
       .not.toThrow();

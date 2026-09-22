@@ -27,7 +27,7 @@ export const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
 const MANAGERS = new Set(['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO']);
 type DocumentAuth = Pick<AuthContext, 'personaId' | 'roles'>;
 const publicDocumentColumns = {
-  id: documentos.id, nombreOriginal: documentos.nombreOriginal, mimeType: documentos.mimeType,
+  id: documentos.id, nombreOriginal: documentos.nombreOriginal, titulo: documentos.titulo, mimeType: documentos.mimeType,
   tamanoBytes: documentos.tamanoBytes, tipo: documentos.tipo, ambito: documentos.ambito,
   publicadoBiblioteca: documentos.publicadoBiblioteca,
   carreraId: documentos.carreraId, planCurricularId: documentos.planCurricularId,
@@ -132,6 +132,7 @@ export async function createDocument(
     buffer: Buffer; filename: string; mimeType: string; tipo: DocumentType;
     ambito: DocumentScope; contextId?: string | undefined; auth: DocumentAuth;
     publicadoBiblioteca?: boolean | undefined;
+    titulo?: string | undefined;
   },
 ) {
   assertDocumentFile({ filename: input.filename, mimeType: input.mimeType, size: input.buffer.byteLength });
@@ -153,6 +154,7 @@ export async function createDocument(
     const [created] = await db.insert(documentos).values({
       storageKey,
       nombreOriginal: input.filename,
+      titulo: input.titulo ?? null,
       mimeType: input.mimeType,
       tamanoBytes: input.buffer.byteLength,
       tipo: input.tipo,

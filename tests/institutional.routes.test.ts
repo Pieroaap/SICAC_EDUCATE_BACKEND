@@ -2,9 +2,9 @@ import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import { registerInstitutionalRoutes } from '../src/modules/institutional/routes.js';
 import { registerErrorHandler } from '../src/infrastructure/http/error-handler.js';
-import { listNews, saveNews } from '../src/modules/institutional/news.js';
+import { deleteNews, listNews, saveNews } from '../src/modules/institutional/news.js';
 import { acceptPrivacy, publishPrivacy } from '../src/modules/institutional/privacy.js';
-vi.mock('../src/modules/institutional/news.js', async (original) => ({ ...await original<typeof import('../src/modules/institutional/news.js')>(), listNews: vi.fn(async () => ({ data: [] })), saveNews: vi.fn(async () => ({})) }));
+vi.mock('../src/modules/institutional/news.js', async (original) => ({ ...await original<typeof import('../src/modules/institutional/news.js')>(), deleteNews: vi.fn(async () => undefined), listNews: vi.fn(async () => ({ data: [] })), saveNews: vi.fn(async () => ({})) }));
 vi.mock('../src/modules/institutional/privacy.js', async (original) => ({ ...await original<typeof import('../src/modules/institutional/privacy.js')>(), acceptPrivacy: vi.fn(async () => ({})), publishPrivacy: vi.fn(async () => ({})) }));
 async function appFor(role: string) {
   const app = Fastify(); registerErrorHandler(app);
@@ -12,6 +12,16 @@ async function appFor(role: string) {
   await registerInstitutionalRoutes(app); return app;
 }
 describe('contratos institucionales', () => {
+  it.each(['ADMINISTRADOR_SISTEMA', 'GESTOR_ACADEMICO', 'DIRECTOR_ACADEMICO', 'PROFESOR', 'ALUMNO'])('eliminación autorizada solo para administrador: %s', async (role) => {
+    const app = await appFor(role); vi.mocked(deleteNews).mockClear();
+    const id = '00000000-0000-4000-8000-000000000001';
+    try {
+      const response = await app.inject({ method: 'DELETE', url: '/noticias/' + id });
+      expect(response.statusCode).toBe(role === 'ADMINISTRADOR_SISTEMA' ? 204 : 403);
+      if (role === 'ADMINISTRADOR_SISTEMA') expect(deleteNews).toHaveBeenCalledWith(undefined, id);
+      else expect(deleteNews).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
   it('un alumno no puede pedir borradores mediante gestion=true', async () => {
     const app = await appFor('ALUMNO');
     try {

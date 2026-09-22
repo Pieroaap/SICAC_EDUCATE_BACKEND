@@ -7,7 +7,7 @@ import { getNewsImageUrl, MAX_NEWS_IMAGE_BYTES, uploadNewsImage } from './news-i
 import { z } from 'zod';
 import { authorize } from '../../infrastructure/http/authorize.js';
 import { acceptPrivacy, getPrivacyStatus, listPrivacyAcceptances, listPrivacyPolicies, publishPrivacy } from './privacy.js';
-import { canManageNews, listNews, newsManagers, saveNews } from './news.js';
+import { canManageNews, deleteNews, listNews, newsManagers, saveNews } from './news.js';
 
 const security = [{ bearerAuth: [] }];
 const pagination = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20) });
@@ -50,6 +50,17 @@ export async function registerInstitutionalRoutes(app: FastifyInstance) {
       params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
     },
   }, (request) => saveNews(app.db, newsSchema.parse(request.body), request.auth!.personaId, z.object({ id: z.string().uuid() }).parse(request.params).id));
+
+  app.delete('/noticias/:id', { preHandler: [app.authenticate, authorize('ADMINISTRADOR_SISTEMA')],
+    schema: { tags: ['Institución'], summary: 'Eliminar noticia institucional (solo administrador)', security,
+      description: 'Elimina la noticia y sus vínculos de adjuntos permanentemente. Conserva los documentos e imágenes almacenados.',
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
+      response: { 204: { type: 'null', description: 'Noticia eliminada' } },
+    },
+  }, async (request, reply) => {
+    await deleteNews(app.db, z.object({ id: z.string().uuid() }).parse(request.params).id);
+    return reply.status(204).send();
+  });
 
   app.get('/privacidad/vigente', { preHandler: [app.authenticate],
     schema: { tags: ['Privacidad'], summary: 'Consultar texto vigente y aceptación propia', security },

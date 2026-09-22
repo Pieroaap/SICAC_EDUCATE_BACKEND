@@ -155,6 +155,20 @@
       "when": 1790036118279,
       "tag": "0021_news-image",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790050703633,
+      "tag": "0022_document-size-25-mib",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790052182009,
+      "tag": "0023_document-title",
+      "breakpoints": true
     }
   ]
 }

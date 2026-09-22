@@ -1,9 +1,20 @@
 # Contrato de integración con el frontend
 
+## Estado en directorio de profesores (2026-09-22)
+
+`GET /profesores` prioriza el rol PROFESOR vigente (`estado=activo`, sin fecha de fin) sobre registros históricos cerrados, aunque tengan una fecha de inicio posterior. Si no hay rol vigente, conserva la selección del registro más reciente. `estado` corresponde al rol docente; no al registro institucional ni al acceso. Los filtros y el total paginado usan esa misma selección.
+
 La fuente interactiva del contrato es Swagger, disponible en `/documentacion`.
 La autenticación utiliza el token Bearer retornado por el inicio de sesión con DNI.
 
 ## Noticias con imagen y tamaño de documentos (2026-09-21)
+
+- `DELETE /noticias/:id`: exclusivo de `ADMINISTRADOR_SISTEMA`, responde 204; 403 para otros roles, 404 si no existe. Elimina permanentemente noticia y vínculos de adjuntos por FK; conserva documentos e imágenes almacenados. La interfaz solicita confirmación y muestra errores con reintento. Edición y creación se presentan en diálogo modal.
+
+- `POST /documentos` acepta `titulo` multipart opcional: texto recortado de 1 a 180 caracteres. Se persiste separado de `nombreOriginal`; listas, creación y adjuntos de noticias devuelven `titulo` nullable. La biblioteca pide un nombre descriptivo al publicar; archivos anteriores usan `nombreOriginal` como alternativa. Requiere migración `0023_document-title`.
+- La edición de noticias publicadas usa el mismo `PUT /noticias/:id`, autorizado para administrador, director y gestor académico; el botón aparece directamente en el muro.
+
+- Corrección de persistencia: `0022_document-size-25-mib` amplía también el CHECK `documentos_tamano_ck` a 26.214.400 bytes. Es necesaria junto al límite del bucket/API: sin esta migración, archivos mayores a 10 MiB fallan al insertar aunque Storage los acepte.
 
 - `POST /noticias/imagenes`: multipart con campo `archivo`, JPG/PNG hasta 5 MiB (5 × 1024² bytes). Solo gestores. Devuelve un documento privado con `id`; no publica el archivo en biblioteca.
 - `POST /noticias` y `PUT /noticias/:id` admiten `imagenDocumentoId` opcional: UUID para asignar/reemplazar, `null` para quitar; omitir conserva el valor anterior al editar. Se validan documento activo institucional, tipo de imagen, tamaño y acceso del gestor. El listado `/noticias` incluye esta referencia nullable.
