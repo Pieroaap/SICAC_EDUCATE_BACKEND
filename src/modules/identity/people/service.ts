@@ -885,7 +885,8 @@ export async function listTeachers(
     .innerJoin(roles, eq(roles.id, personasRoles.rolId))
     .leftJoin(usuariosAuth, eq(usuariosAuth.personaId, personas.id))
     .where(eq(roles.codigo, 'PROFESOR'))
-    .orderBy(personas.id, desc(personasRoles.fechaInicio))
+    // Un rol vigente puede ser más antiguo que un registro histórico cerrado.
+    .orderBy(personas.id, desc(and(eq(personasRoles.estado, 'activo'), isNull(personasRoles.fechaFin))!), desc(personasRoles.fechaInicio))
     .as('latest_teachers');
   const currentConditions: SQL[] = [];
   if (filters.estado) currentConditions.push(eq(latestTeachers.estado, filters.estado));
