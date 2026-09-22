@@ -1,0 +1,2 @@
+ALTER TABLE "documentos" DROP CONSTRAINT "documentos_tamano_ck";--> statement-breakpoint
+ALTER TABLE "documentos" ADD CONSTRAINT "documentos_tamano_ck" CHECK ("documentos"."tamano_bytes" > 0 and "documentos"."tamano_bytes" <= 26214400);

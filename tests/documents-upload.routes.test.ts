@@ -15,13 +15,24 @@ vi.mock('../src/modules/documents/service.js', async (original) => {
   }) };
 });
 
-function multipart(size: number, signature = '%PDF-1.7') {
+function multipart(size: number, signature = '%PDF-1.7', titulo?: string) {
   const file = Buffer.alloc(size); file.write(signature);
-  return Buffer.concat([Buffer.from('--test\r\nContent-Disposition: form-data; name="archivo"; filename="prueba.pdf"\r\nContent-Type: application/pdf\r\n\r\n'), file,
+  return Buffer.concat([Buffer.from(titulo === undefined ? '' : `--test\r\nContent-Disposition: form-data; name="titulo"\r\n\r\n${titulo}\r\n`), Buffer.from('--test\r\nContent-Disposition: form-data; name="archivo"; filename="prueba.pdf"\r\nContent-Type: application/pdf\r\n\r\n'), file,
     Buffer.from('\r\n--test\r\nContent-Disposition: form-data; name="tipo"\r\n\r\nOTRO\r\n--test\r\nContent-Disposition: form-data; name="ambito"\r\n\r\nINSTITUCION\r\n--test--\r\n')]);
 }
 
 describe('carga multipart de documentos', () => {
+  it.each([['  Calendario académico  ', 201], ['   ', 400], ['x'.repeat(181), 400]])('valida nombre descriptivo %s', async (titulo, status) => {
+    const app = Fastify(); registerErrorHandler(app);
+    app.decorate('authenticate', async (request: { auth?: unknown }) => { request.auth = { personaId: 'admin', roles: ['ADMINISTRADOR_SISTEMA'] }; });
+    await app.register(registerDocumentRoutes); vi.mocked(createDocument).mockClear();
+    try {
+      const response = await app.inject({ method: 'POST', url: '/documentos', headers: { 'content-type': 'multipart/form-data; boundary=test' }, payload: multipart(100, '%PDF-1.7', titulo) });
+      expect(response.statusCode).toBe(status);
+      if (status === 201) expect(vi.mocked(createDocument).mock.calls[0]?.[3]).toMatchObject({ titulo: 'Calendario académico', filename: 'prueba.pdf' });
+      else expect(createDocument).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
   it.each([300 * 1024, 11 * 1024 * 1024, MAX_DOCUMENT_BYTES])('acepta PDF de %i bytes por HTTP', async (size) => {
     const app = Fastify(); registerErrorHandler(app);
     app.decorate('authenticate', async (request: { auth?: unknown }) => { request.auth = { personaId: 'admin', roles: ['ADMINISTRADOR_SISTEMA'] }; });

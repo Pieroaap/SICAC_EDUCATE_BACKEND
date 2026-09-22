@@ -1,0 +1,1 @@
+ALTER TABLE "documentos" ADD COLUMN "titulo" varchar(180);

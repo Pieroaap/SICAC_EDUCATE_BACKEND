@@ -5,6 +5,11 @@ import { badRequest, notFound } from '../../shared/errors.js';
 
 export const newsManagers = ['ADMINISTRADOR_SISTEMA', 'DIRECTOR_ACADEMICO', 'GESTOR_ACADEMICO'];
 export const canManageNews = (roles: string[]) => roles.some((role) => newsManagers.includes(role));
+export async function deleteNews(db: Database, id: string) {
+  // La FK elimina vínculos de adjuntos; los documentos compartidos permanecen intactos.
+  const [deleted] = await db.delete(noticias).where(eq(noticias.id, id)).returning({ id: noticias.id });
+  if (!deleted) throw notFound('Noticia no encontrada');
+}
 export async function listNews(db: Database, input: { page: number; pageSize: number; manage: boolean; estado?: string | undefined }) {
   const where = input.manage ? (input.estado ? eq(noticias.estado, input.estado) : undefined) : eq(noticias.estado, 'publicada');
   const [rows, totals] = await Promise.all([
@@ -12,7 +17,7 @@ export async function listNews(db: Database, input: { page: number; pageSize: nu
       .limit(input.pageSize).offset((input.page - 1) * input.pageSize),
     db.select({ value: count() }).from(noticias).where(where),
   ]);
-  const attachments = rows.length ? await db.select({ noticiaId: noticiasDocumentos.noticiaId, id: documentos.id, nombreOriginal: documentos.nombreOriginal })
+  const attachments = rows.length ? await db.select({ noticiaId: noticiasDocumentos.noticiaId, id: documentos.id, nombreOriginal: documentos.nombreOriginal, titulo: documentos.titulo })
     .from(noticiasDocumentos).innerJoin(documentos, eq(documentos.id, noticiasDocumentos.documentoId))
     .where(and(inArray(noticiasDocumentos.noticiaId, rows.map((row) => row.id)), eq(documentos.estado, 'activo'), eq(documentos.ambito, 'INSTITUCION'), eq(documentos.publicadoBiblioteca, true))) : [];
   const total = totals[0]?.value ?? 0;

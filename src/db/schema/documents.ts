@@ -19,6 +19,7 @@ export const documentos = pgTable('documentos', {
   id: uuid('id').primaryKey().defaultRandom(),
   storageKey: varchar('storage_key', { length: 500 }).notNull(),
   nombreOriginal: varchar('nombre_original', { length: 255 }).notNull(),
+  titulo: varchar('titulo', { length: 180 }),
   mimeType: varchar('mime_type', { length: 150 }).notNull(),
   tamanoBytes: integer('tamano_bytes').notNull(),
   tipo: academicDocumentTypeEnum('tipo').notNull(),
@@ -44,7 +45,7 @@ export const documentos = pgTable('documentos', {
   index('documentos_periodo_idx').on(t.periodoAcademicoId),
   index('documentos_autor_idx').on(t.subidoPorPersonaId),
   index('documentos_eliminado_por_idx').on(t.eliminadoPorPersonaId),
-  check('documentos_tamano_ck', sql`${t.tamanoBytes} > 0 and ${t.tamanoBytes} <= 10485760`),
+  check('documentos_tamano_ck', sql`${t.tamanoBytes} > 0 and ${t.tamanoBytes} <= 26214400`),
   check('documentos_contexto_ck', sql`
     (${t.ambito} = 'INSTITUCION' and num_nonnulls(${t.carreraId}, ${t.planCurricularId}, ${t.cursoId}, ${t.cursoProgramadoId}, ${t.periodoAcademicoId}) = 0)
     or (${t.ambito} = 'CARRERA' and ${t.carreraId} is not null and num_nonnulls(${t.planCurricularId}, ${t.cursoId}, ${t.cursoProgramadoId}, ${t.periodoAcademicoId}) = 0)

@@ -23,7 +23,7 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
     bodyLimit: MAX_DOCUMENT_BYTES + 64 * 1024,
     preHandler: [app.authenticate],
     schema: { tags: ['Documentos'], summary: 'Subir un documento privado', security, consumes: ['multipart/form-data'],
-      description: 'Máximo 25 MiB por archivo. Multipart: archivo (binario), tipo, ambito, contextId opcional. publicadoBiblioteca opcional: texto true/false, predeterminado false. Solo gestores pueden publicar expresamente un archivo INSTITUCION en biblioteca; los archivos existentes no se publican por defecto.',
+      description: 'Máximo 25 MiB por archivo. Multipart: archivo (binario), tipo, ambito, contextId opcional, titulo opcional (texto de 1 a 180 caracteres; nombre descriptivo independiente del archivo). publicadoBiblioteca opcional: texto true/false, predeterminado false. Solo gestores pueden publicar expresamente un archivo INSTITUCION en biblioteca; los archivos existentes no se publican por defecto.',
     },
   }, async (request, reply) => {
     const body = request.body as Record<string, unknown> | undefined;
@@ -35,6 +35,7 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
       buffer: await file.toBuffer(), filename: file.filename, mimeType: file.mimetype,
       tipo: documentType.parse(fieldValue(body?.tipo)), ambito, contextId, auth: request.auth!,
       publicadoBiblioteca: z.enum(['', 'true', 'false']).parse(fieldValue(body?.publicadoBiblioteca)) === 'true',
+      titulo: z.string().trim().min(1).max(180).optional().parse(body?.titulo === undefined ? undefined : fieldValue(body.titulo)),
     });
     return reply.status(201).send(created);
   });
