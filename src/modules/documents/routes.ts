@@ -20,9 +20,10 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
   });
 
   app.post('/documentos', {
+    bodyLimit: MAX_DOCUMENT_BYTES + 64 * 1024,
     preHandler: [app.authenticate],
     schema: { tags: ['Documentos'], summary: 'Subir un documento privado', security, consumes: ['multipart/form-data'],
-      description: 'Multipart: archivo (binario), tipo, ambito, contextId opcional. publicadoBiblioteca opcional: texto true/false, predeterminado false. Solo gestores pueden publicar expresamente un archivo INSTITUCION en biblioteca; los archivos existentes no se publican por defecto.',
+      description: 'Máximo 25 MiB por archivo. Multipart: archivo (binario), tipo, ambito, contextId opcional. publicadoBiblioteca opcional: texto true/false, predeterminado false. Solo gestores pueden publicar expresamente un archivo INSTITUCION en biblioteca; los archivos existentes no se publican por defecto.',
     },
   }, async (request, reply) => {
     const body = request.body as Record<string, unknown> | undefined;

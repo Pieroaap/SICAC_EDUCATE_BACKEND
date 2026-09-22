@@ -10,7 +10,7 @@ import type { SupabaseClient } from '../../infrastructure/supabase/client.js';
 import { badRequest, forbidden, notFound } from '../../shared/errors.js';
 import type { AuthContext } from '../../types/fastify.js';
 
-export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 export const SIGNED_URL_TTL_SECONDS = 300;
 export const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
   'application/pdf',
@@ -42,7 +42,7 @@ const isManager = (auth: DocumentAuth) => auth.roles.some((role) => MANAGERS.has
 
 export function assertDocumentFile(input: { filename: string; mimeType: string; size: number }): void {
   if (input.size <= 0 || input.size > MAX_DOCUMENT_BYTES) {
-    throw badRequest('El archivo debe pesar entre 1 byte y 10 MiB');
+    throw badRequest('El archivo debe pesar entre 1 byte y 25 MiB');
   }
   if (!ALLOWED_DOCUMENT_MIME_TYPES.has(input.mimeType)) {
     throw badRequest('El tipo de archivo no está permitido');

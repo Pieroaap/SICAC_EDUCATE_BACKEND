@@ -1,0 +1,2 @@
+ALTER TABLE "noticias_institucionales" ADD COLUMN "imagen_documento_id" uuid;--> statement-breakpoint
+ALTER TABLE "noticias_institucionales" ADD CONSTRAINT "noticias_institucionales_imagen_documento_id_documentos_id_fk" FOREIGN KEY ("imagen_documento_id") REFERENCES "public"."documentos"("id") ON DELETE restrict ON UPDATE no action;

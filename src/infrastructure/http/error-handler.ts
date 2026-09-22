@@ -24,6 +24,12 @@ export function registerErrorHandler(app: FastifyInstance): void {
       return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'Datos de entrada inválidos' });
     }
 
+    if (error.statusCode === 413) {
+      return reply.status(413).send({ error: 'FILE_TOO_LARGE', message: 'El archivo supera el tamaño permitido: 25 MiB para documentos y 5 MiB para imágenes de noticias.' });
+    }
+    if (error.statusCode === 400 || error.statusCode === 415) {
+      return reply.status(error.statusCode).send({ error: 'INVALID_UPLOAD', message: 'No se pudo leer el archivo. Selecciónelo nuevamente y compruebe su formato.' });
+    }
     request.log.error(error);
     return reply.status(500).send({
       error: 'INTERNAL_ERROR',

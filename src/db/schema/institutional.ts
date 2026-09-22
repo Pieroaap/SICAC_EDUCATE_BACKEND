@@ -8,6 +8,7 @@ export const noticias = pgTable('noticias_institucionales', {
   id: uuid('id').primaryKey().defaultRandom(), titulo: varchar('titulo', { length: 180 }).notNull(),
   contenido: text('contenido').notNull(), estado: varchar('estado', { length: 20 }).notNull().default('borrador'),
   fijada: boolean('fijada').notNull().default(false),
+  imagenDocumentoId: uuid('imagen_documento_id').references(() => documentos.id, { onDelete: 'restrict' }),
   autorPersonaId: uuid('autor_persona_id').notNull().references(() => personas.id, { onDelete: 'restrict' }),
   publicadaAt: timestamp('publicada_at', { withTimezone: true }), ...auditColumns,
 }, (t) => [index('noticias_listado_idx').on(t.estado, t.fijada, t.publicadaAt),

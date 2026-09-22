@@ -3,6 +3,15 @@
 La fuente interactiva del contrato es Swagger, disponible en `/documentacion`.
 La autenticación utiliza el token Bearer retornado por el inicio de sesión con DNI.
 
+## Noticias con imagen y tamaño de documentos (2026-09-21)
+
+- `POST /noticias/imagenes`: multipart con campo `archivo`, JPG/PNG hasta 5 MiB (5 × 1024² bytes). Solo gestores. Devuelve un documento privado con `id`; no publica el archivo en biblioteca.
+- `POST /noticias` y `PUT /noticias/:id` admiten `imagenDocumentoId` opcional: UUID para asignar/reemplazar, `null` para quitar; omitir conserva el valor anterior al editar. Se validan documento activo institucional, tipo de imagen, tamaño y acceso del gestor. El listado `/noticias` incluye esta referencia nullable.
+- `GET /noticias/:id/imagen` devuelve `{ url, expiresAt }`: URL firmada de visualización durante 300 segundos. Lectores solo acceden a noticias publicadas; gestores también a borradores/retiradas. No usar `url-descarga` para mostrar estas imágenes privadas.
+- `POST /documentos`: máximo 25 MiB (25 × 1024² bytes); se mantienen tipos, firma binaria, autorización y confirmación de publicación. Exceso multipart devuelve 413 con mensaje legible.
+- Antes del despliegue, aplicar `0021_news-image.sql` mediante migraciones y ejecutar `npm run storage:setup` para actualizar el límite del bucket privado existente. Desplegar backend antes del frontend. Estas operaciones remotas no se ejecutaron en este cambio.
+- Imágenes subidas cuya noticia no llega a guardarse permanecen como documentos privados; no aparecen en biblioteca ni en el muro. Eliminar una referencia no elimina físicamente el archivo ni afecta a otras noticias.
+
 ## Sesión y perfil
 
 - `POST /auth/login` recibe `dni` y `password`.

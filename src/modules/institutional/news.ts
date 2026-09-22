@@ -20,9 +20,22 @@ export async function listNews(db: Database, input: { page: number; pageSize: nu
     pagination: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) } };
 }
 
-export type NewsInput = { titulo: string; contenido: string; estado: 'borrador' | 'publicada' | 'retirada'; fijada: boolean; documentoIds: string[] };
+export type NewsInput = { titulo: string; contenido: string; estado: 'borrador' | 'publicada' | 'retirada'; fijada: boolean; documentoIds: string[]; imagenDocumentoId?: string | null | undefined };
 export async function saveNews(db: Database, input: NewsInput, actorId: string, id?: string) {
   return db.transaction(async (tx) => {
+    if (input.imagenDocumentoId) {
+      const [image] = await tx.select().from(documentos).where(and(eq(documentos.id, input.imagenDocumentoId), eq(documentos.estado, 'activo'), eq(documentos.ambito, 'INSTITUCION'))).limit(1);
+      if (!image || !['image/jpeg', 'image/png'].includes(image.mimeType) || image.tamanoBytes <= 0 || image.tamanoBytes > 5 * 1024 * 1024) {
+        throw badRequest('Seleccione una imagen JPG o PNG autorizada de hasta 5 MiB');
+      }
+      if (!image.publicadoBiblioteca && image.subidoPorPersonaId !== actorId) {
+        // Se permite conservar una imagen existente al editar por otro gestor.
+        const [existing] = id ? await tx.select().from(noticias).where(eq(noticias.id, id)).limit(1) : [];
+        if (existing?.imagenDocumentoId !== image.id) {
+          throw badRequest('Seleccione una imagen JPG o PNG autorizada de hasta 5 MiB');
+        }
+      }
+    }
     if (new Set(input.documentoIds).size !== input.documentoIds.length) throw badRequest('No repita archivos adjuntos');
     if (input.documentoIds.length) {
       const files = await tx.select({ id: documentos.id }).from(documentos).where(and(

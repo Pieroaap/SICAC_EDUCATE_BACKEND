@@ -23,6 +23,7 @@ describe('contratos institucionales', () => {
     const app = await appFor(role);
     try {
       expect((await app.inject({ method: 'POST', url: '/noticias', payload: { titulo: 'X', contenido: 'Y', estado: 'publicada' } })).statusCode).toBe(403);
+      expect((await app.inject({ method: 'POST', url: '/noticias/imagenes', headers: { 'content-type': 'multipart/form-data; boundary=test' }, payload: '--test--\r\n' })).statusCode).toBe(403);
       expect((await app.inject({ method: 'POST', url: '/privacidad/politicas', payload: { version: 'v1', titulo: 'X', contenido: 'Y', provisional: true } })).statusCode).toBe(403);
     } finally { await app.close(); }
   });
