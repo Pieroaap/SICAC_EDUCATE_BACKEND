@@ -21,11 +21,20 @@ function normalizeHeader(value: string): string {
 function readSheetRows(workbook: xlsx.WorkBook, sheetName: string): Record<string, unknown>[] {
   const sheet = workbook.Sheets[sheetName];
   if (!sheet) return [];
-  return xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+  const rows = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, {
     defval: '',
     blankrows: false,
     raw: true,
   });
+  const formatted = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', blankrows: false, raw: false });
+  return rows.map((row, index) => Object.fromEntries(Object.entries(row).map(([key, value]) => {
+    if (normalizeHeader(key) !== 'dni') return [key, value];
+    const document = String(formatted[index]?.[key] ?? value).trim();
+    if (document && !/^\d{8}$/.test(document)) {
+      throw badRequest(`Hoja ${sheetName}, registro ${index + 1}: el DNI debe tener 8 dígitos. Use texto o formato 00000000 en Excel para conservar el cero inicial.`);
+    }
+    return [key, document];
+  })));
 }
 
 function asText(value: unknown): string {
