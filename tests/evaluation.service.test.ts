@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../src/shared/errors.js';
+import { validateComponents } from '../src/modules/evaluation/service.js';
+
+describe('planificación progresiva y cierre de acta', () => {
+  const partial = [{ nombre: 'Tarea', porcentaje: 20, orden: 1 }];
+  it('permite guardar un componente con peso parcial', () => {
+    expect(() => validateComponents(partial)).not.toThrow();
+  });
+  it('rechaza cerrar con peso parcial y acepta 100%', () => {
+    expect(() => validateComponents(partial, true)).toThrow('exactamente 100%');
+    expect(() => validateComponents([...partial, { nombre: 'Examen', porcentaje: 80, orden: 2 }], true)).not.toThrow();
+  });
+  it('rechaza sobrepeso, cero y planificación vacía', () => {
+    expect(() => validateComponents([...partial, { nombre: 'Examen', porcentaje: 90, orden: 2 }])).toThrow('superar');
+    expect(() => validateComponents([{ nombre: 'Tarea', porcentaje: 0, orden: 1 }])).toThrow('mayor a cero');
+    expect(() => validateComponents([])).toThrow('al menos');
+  });
+});
 import {
   calculateWeightedGrade,
   classifyGrade,

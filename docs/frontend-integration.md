@@ -1,5 +1,11 @@
 # Contrato de integración con el frontend
 
+## Planificación parcial de evaluaciones y DNI en Excel (2026-10-02)
+
+Guardar componentes permite un total menor o igual a 100%, con al menos una evaluación de peso positivo. Publicar/cerrar el acta sigue exigiendo exactamente 100%, todas las notas y alumnos activos. El formulario muestra únicamente «Fecha de la evaluación» (`fechaProgramada`, opcional). `fechaLimite` se conserva opcional en la API por compatibilidad; el formulario no la solicita ni la envía.
+
+Importación de Excel: DNI se interpreta como texto formateado para conservar ceros iniciales, tanto en celdas de texto como con máscara `00000000`. Un DNI no vacío debe contener ocho dígitos; documentos incompletos generan error antes de importar. No se completan dígitos automáticamente ni se modifican documentos existentes.
+
 ## Estado en directorio de profesores (2026-09-22)
 
 `GET /profesores` prioriza el rol PROFESOR vigente (`estado=activo`, sin fecha de fin) sobre registros históricos cerrados, aunque tengan una fecha de inicio posterior. Si no hay rol vigente, conserva la selección del registro más reciente. `estado` corresponde al rol docente; no al registro institucional ni al acceso. Los filtros y el total paginado usan esa misma selección.

@@ -70,12 +70,13 @@ async function assertCourseAccess(db: Database, courseId: string, auth: Evaluati
   return course;
 }
 
-function validateComponents(components: ComponentInput[]): void {
+export function validateComponents(components: ComponentInput[], requireComplete = false): void {
   if (components.length === 0) throw badRequest('Debe definir al menos una evaluación');
   const total = components.reduce((sum, item) => sum + item.porcentaje, 0);
-  if (Math.abs(total - 100) > 0.001) {
+  if (requireComplete && Math.abs(total - 100) > 0.001) {
     throw badRequest('Los componentes deben sumar exactamente 100%');
   }
+  if (total > 100.001) throw badRequest('Los componentes no pueden superar el 100%');
   if (components.some((item) => item.porcentaje <= 0 || item.porcentaje > 100)) {
     throw badRequest('Cada porcentaje debe ser mayor a cero y menor o igual a 100');
   }
@@ -356,7 +357,7 @@ export async function publishAcademicAct(
       nombre: item.nombre,
       porcentaje: Number(item.porcentaje),
       orden: item.orden,
-    })));
+    })), true);
     if (gradebook.students.length === 0) throw badRequest('No existen alumnos activos para publicar el acta');
     const expected = gradebook.components.length;
     if (gradebook.students.some((student) => student.grades.length !== expected)) {

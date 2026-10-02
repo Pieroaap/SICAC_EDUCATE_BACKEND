@@ -83,7 +83,7 @@ export async function registerEvaluationRoutes(app: FastifyInstance): Promise<vo
   app.put('/cursos-programados/:id/componentes-evaluacion', {
     ...guarded,
     schema: routeSchema('Crear o actualizar componentes y pesos de evaluación', {
-      description: 'La suma de pesos debe ser exactamente 100%. Solo se permite mientras el acta está abierta.',
+      description: 'Permite guardar planificación parcial con suma de pesos hasta 100%. Para publicar/cerrar el acta se exige exactamente 100% y todas las notas. Solo se permite modificar componentes mientras el acta está abierta.',
       params: idParams,
       body: {
         type: 'object',
